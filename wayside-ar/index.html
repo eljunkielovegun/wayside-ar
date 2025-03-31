@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wayside.at AR Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #3F88C5;
+        }
+        a {
+            display: inline-block;
+            background-color: #3F88C5;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        a:hover {
+            background-color: #136F63;
+        }
+        .marker-image {
+            max-width: 300px;
+            margin: 20px 0;
+            border: 1px solid #ccc;
+        }
+        .instructions {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Wayside.at AR Test</h1>
+    <p>This is a basic test for the Wayside.at AR application. Click the button below to try the AR test.</p>
+    
+    <div class="instructions">
+        <h2>Testing Instructions:</h2>
+        <ol>
+            <li>Print the Hiro marker (shown below)</li>
+            <li>Allow camera access when prompted</li>
+            <li>Point your camera at the printed marker</li>
+            <li>You should see a blue rotating cube with text appear on the marker</li>
+        </ol>
+        <img src="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png" alt="Hiro Marker" class="marker-image">
+    </div>
+    
+    <a href="test-pages/basic-marker-test.html">Launch AR Test</a>
+</body>
+</html>
