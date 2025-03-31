@@ -64,10 +64,10 @@
     <!-- A-Frame scene -->
     <a-scene 
         embedded
-        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+        arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;"
         vr-mode-ui="enabled: false"
-        renderer="logarithmicDepthBuffer: true; precision: medium;"
-        onload="hideLoading()">
+        renderer="logarithmicDepthBuffer: true;">
+            onload="hideLoading()">
         
         <!-- Use a standard hiro marker -->
         <a-marker preset="hiro" smooth="true" smoothCount="5" smoothTolerance="0.01" smoothThreshold="2" raycaster="objects: .clickable" emitevents="true" cursor="fuse: false; rayOrigin: mouse;" id="marker">
