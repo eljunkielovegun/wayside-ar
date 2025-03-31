@@ -51,10 +51,18 @@
     <a-scene 
         embedded
         arjs="sourceType: webcam; debugUIEnabled: true; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
-        vr-mode-ui="enabled: false">
+        vr-mode-ui="enabled: false"
+        renderer="logarithmicDepthBuffer: true;"
+        xrweb="scale:absolute"
+        >
         
         <!-- Use the patternUrl for better marker detection -->
-        <a-marker type="pattern" url="../src/assets/markers/moments/pattern-TestMarker1.patt">
+        <a-marker type="pattern" 
+            url="../src/assets/markers/moments/pattern-TestMarker1.patt"
+            preset="custom"
+            raycaster="objects: .clickable"
+            emitevents="true"     
+            >
             <!-- Simple cube that will appear when marker is detected -->
             <a-box position="0 0.5 0" color="red" scale="0.5 0.5 0.5" animation="property: rotation; to: 0 360 0; loop: true; dur: 5000; easing: linear;"></a-box>
         </a-marker>
