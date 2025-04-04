@@ -10,6 +10,7 @@
         body {
             margin: 0;
             overflow: hidden;
+            background-color: #000;
         }
         #water-controls {
             position: absolute;
@@ -62,19 +63,22 @@
             z-index: 999;
             max-width: 300px;
         }
+        .a-enter-vr {
+            display: none !important;
+        }
     </style>
     
     <!-- Load A-Frame first -->
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     
-    <!-- Load AR.js -->
+    <!-- Load AR.js (compatible with A-Frame 1.3.0) -->
     <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
     
-    <!-- Three.js dependencies -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+    <!-- Load Three.js Water implementation from examples -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/examples/js/objects/Water.js"></script>
     
-    <!-- Load our custom AR water component -->
-    <script src="src/components/ar/ar-water-component.js"></script>
+    <!-- Our custom AR water component -->
+    <script src="ar-water-component.js"></script>
 </head>
 <body>
     <div class="info-panel" id="info">Looking for climate change marker...</div>
@@ -97,7 +101,7 @@
         <!-- Use existing marker that has been tested -->
         <a-marker type="pattern" url="https://eljunkielovegun.github.io/wayside-ar/test-pages/mark5.patt"
                  ar-water-simulation="maxWaterRise: 10; startYear: 2030; endYear: 2100">
-            <!-- The water simulation will be added by the component -->
+            <!-- Water will be added by component -->
         </a-marker>
         
         <a-entity camera></a-entity>
