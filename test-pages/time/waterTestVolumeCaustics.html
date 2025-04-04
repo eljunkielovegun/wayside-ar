@@ -1,0 +1,548 @@
+<!-- HTML - Add slider and year display -->
+<div id="info">Three.js Water Demo</div>
+<div id="container"></div>
+<div id="control-panel">
+  <div id="year-display">Year: 2030</div>
+  <input type="range" id="water-level-slider" min="0" max="100" value="0">
+  <div id="slider-labels">
+    <span>2030</span>
+    <span>2100</span>
+  </div>
+</div>
+
+<!-- /* CSS - Add styling for the slider and year display */ -->
+ <style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #000;
+}
+#info {
+    position: absolute;
+    top: 10px;
+    width: 100%;
+    text-align: center;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    z-index: 100;
+    pointer-events: none;
+}
+#container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+#control-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    background-color: rgba(0, 0, 0, 0);
+    padding: 15px;
+    border-radius: 5px;
+    z-index: 100;
+}
+#year-display {
+    color: white;
+    text-align: center;
+    margin-bottom: 10px;
+    font-family: Arial, sans-serif;
+}
+#water-level-slider {
+    width: 100%;
+    margin-bottom: 5px;
+}
+#slider-labels {
+    display: flex;
+    justify-content: space-between;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+</style>
+
+// JavaScript
+// Import Three.js from CDN
+
+<script>
+import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js';
+import { Water } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/objects/Water.js';
+import { Sky } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/objects/Sky.js';
+
+// Global variables
+let container, camera, scene, renderer;
+let controls, water, sun, sky;
+let currentWaterLevel = 0;
+let targetWaterLevel = 0;
+const maxWaterRise = 50; // Maximum water level rise in units
+const startYear = 2030;
+const endYear = 2100;
+const groundLevel = -10; // Y position of the ground
+let causticTime = 0;
+
+// Caustic texture variables
+const causticTextures = [];
+const textureLoader = new THREE.TextureLoader();
+let causticPlane;
+let currentCausticIndex = 0;
+let frameCount = 0;
+
+// Underwater effect variables
+let isUnderwater = false;
+let underwaterColor = new THREE.Color(0x000f0f);  // Darker blue for deep water
+let normalFogColor = new THREE.Color(0x87ceeb);   // Sky blue
+let underwaterFogDensity = 0.012;  // Increased for better abyss feeling
+
+// Caustic texture URLs
+const causticUrls = [
+  'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/qf7jbexawjm561gbrnur.bmp',
+  'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/uafyuzgxuqfdslrbnqpm.bmp',
+  'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/yslsrdo3jqqfn8xjfyii.bmp',
+  'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/djxasdkslrqcybelyrom.bmp',
+  'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/ywqy9urvrryjwk32evgv.bmp'
+];
+
+// Initialize the scene
+init();
+animate();
+
+function init() {
+    container = document.getElementById('container');
+
+    // Create scene
+    scene = new THREE.Scene();
+
+    // Create camera
+    // camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
+  // In init() function, when creating the camera:
+camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 5, 10000);
+    camera.position.set(30, 30, 100);
+
+    // Create renderer with transparency
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.NoToneMapping;
+    container.appendChild(renderer.domElement);
+
+    // Add basic lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(0, 50, 0);
+    scene.add(directionalLight);
+
+    // Controls
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.maxPolarAngle = Math.PI * 0.495;
+    controls.target.set(0, 10, 0);
+    controls.minDistance = 40.0;
+    controls.maxDistance = 200.0;
+    controls.update();
+
+    // Sun position vector
+    sun = new THREE.Vector3();
+
+    // Add tall measurement column with markings
+    addMeasurementColumn();
+
+    // Load water texture
+    textureLoader.load(
+        'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/waternormals.jpg',
+        function(waterNormals) {
+            waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+            
+            // Create water
+            const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+            
+            water = new Water(
+                waterGeometry,
+                {
+                    textureWidth: 512,
+                    textureHeight: 512,
+                    waterNormals: waterNormals,
+                    alpha: 1.0,
+                    sunDirection: new THREE.Vector3(0, 1, 0).normalize(),
+                    sunColor: 0xffffff,
+                    waterColor: 0x001e0f,
+                    distortionScale: 3.7,
+                    fog: false
+                }
+            );
+            
+            water.rotation.x = -Math.PI / 2;
+            water.position.y = 0;
+            scene.add(water);
+            console.log("Water added to scene");
+
+            // Sky setup
+            sky = new Sky();
+            sky.scale.setScalar(10000);
+            scene.add(sky);
+          
+            scene.userData.sky = sky;
+
+            const skyUniforms = sky.material.uniforms;
+            skyUniforms['turbidity'].value = 10;
+            skyUniforms['rayleigh'].value = 2;
+            skyUniforms['mieCoefficient'].value = 0.005;
+            skyUniforms['mieDirectionalG'].value = 0.8;
+
+            // Parameters for sun position
+            const parameters = {
+                elevation: 3,
+                azimuth: 180
+            };
+
+            // Function to update sun position
+            function updateSun() {
+                const phi = THREE.MathUtils.degToRad(90 - parameters.elevation);
+                const theta = THREE.MathUtils.degToRad(parameters.azimuth);
+
+                sun.setFromSphericalCoords(1, phi, theta);
+
+                sky.material.uniforms['sunPosition'].value.copy(sun);
+                water.material.uniforms['sunDirection'].value.copy(sun).normalize();
+            }
+            updateSun();
+            
+            // Now set up the underwater effects
+            setupUnderwaterEffects();
+        }
+    );
+
+    // Load caustic textures
+    loadCausticTextures();
+
+    // Setup water level slider
+    const slider = document.getElementById('water-level-slider');
+    slider.addEventListener('input', function(e) {
+        const sliderValue = parseInt(e.target.value);
+        targetWaterLevel = (sliderValue / 100) * maxWaterRise;
+        
+        // Update year display based on slider value
+        const currentYear = Math.floor(startYear + (sliderValue / 100) * (endYear - startYear));
+        document.getElementById('year-display').innerText = `Year: ${currentYear}`;
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', onWindowResize);
+}
+
+// Function to add a tall measurement column with height markings
+function addMeasurementColumn() {
+    // Height of the column - tall enough to see the max water rise
+    const columnHeight = maxWaterRise * 1.5;
+    
+    // Create the main column
+    const columnGeometry = new THREE.BoxGeometry(2, columnHeight, 2);
+    const columnMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xcccccc,
+        transparent: true,
+        opacity: 0.8
+    });
+    const column = new THREE.Mesh(columnGeometry, columnMaterial);
+    column.position.set(0, columnHeight / 2, 0); // Position from the ground up
+    scene.add(column);
+    
+    // Add height markings every 5 units
+    for (let i = 0; i <= maxWaterRise; i += 5) {
+        // Create a marker line
+        const markerGeometry = new THREE.BoxGeometry(3, 0.2, 0.2);
+        const markerMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        marker.position.set(0, i, 1.1); // Position on the front face of the column
+        scene.add(marker);
+        
+        // Add distinctive markers for heights that are multiples of 10
+        if (i % 10 === 0) {
+            const labelGeometry = new THREE.BoxGeometry(4, 0.4, 0.4);
+            const labelMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+            const label = new THREE.Mesh(labelGeometry, labelMaterial);
+            label.position.set(0, i, 1.2); // Position slightly in front of the regular marker
+            scene.add(label);
+        }
+    }
+}
+
+// Set up underwater effects
+function setupUnderwaterEffects() {
+    // Initially no fog
+    scene.fog = null;
+    
+    // Set initial clear color for renderer
+    renderer.setClearColor(0x000000, 0); // Transparent background initially
+    
+    // Store the original sky for later reference
+    scene.userData.originalSky = sky;
+    
+    // Add underwater ambient light (dimmer, blue-green)
+    const underwaterAmbient = new THREE.AmbientLight(0x00334d, 0.5);
+    underwaterAmbient.visible = false;
+    scene.add(underwaterAmbient);
+    scene.userData.underwaterAmbient = underwaterAmbient;
+    
+    // Extend camera far value for better depth effect
+    camera.far = 50000;
+    camera.updateProjectionMatrix();
+}
+
+// Load caustic textures
+function loadCausticTextures() {
+    let texturesLoaded = 0;
+    
+    causticUrls.forEach((url, index) => {
+        const texture = textureLoader.load(
+            url,
+            // On load callback
+            () => {
+                texturesLoaded++;
+                console.log(`Loaded caustic texture ${texturesLoaded} of ${causticUrls.length}`);
+                
+                // When all textures are loaded, create the caustic plane
+                if (texturesLoaded === causticUrls.length) {
+                    createCausticPlane();
+                }
+            }
+        );
+        
+        // Make the texture repeat/tile
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        // Optional: set repeat scale
+        texture.repeat.set(-4, 4);
+        
+        causticTextures[index] = texture;
+    });
+}
+
+// Create the caustic projection plane
+function createCausticPlane() {
+    // Create a HUGE caustic plane for the abyss effect
+    const causticPlaneGeometry = new THREE.PlaneGeometry(20000, 20000);
+    const causticMaterial = new THREE.MeshBasicMaterial({
+        map: causticTextures[0],
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        opacity: 0.0, // Start with invisible
+        color: 0xffffff // Use white to preserve texture colors
+    });
+
+    causticPlane = new THREE.Mesh(causticPlaneGeometry, causticMaterial);
+    causticPlane.rotation.x = -Math.PI / 2; // Horizontal plane
+    
+    // Start with no fixed position - we'll update it to follow camera
+    causticPlane.position.y = -100; 
+    scene.add(causticPlane);
+    
+    console.log('Caustic plane created');
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    
+    // Animate the water if it exists
+    if (water) {
+        // Animate water waves
+        water.material.uniforms['time'].value += 1.0 / 60.0;
+        
+        // Smoothly interpolate water level
+        currentWaterLevel += (targetWaterLevel - currentWaterLevel) * 0.02;
+        water.position.y = currentWaterLevel;
+        
+        // Adjust water color based on depth
+        const depthFactor = currentWaterLevel / maxWaterRise;
+        const waterColor = new THREE.Color(
+            0.0, 
+            Math.max(0.05, 0.11 - depthFactor * 0.08), 
+            Math.max(0.05, 0.15 - depthFactor * 0.1)
+        );
+        water.material.uniforms['waterColor'].value = waterColor;
+        
+        // Check if camera is underwater
+        const wasUnderwater = isUnderwater;
+        isUnderwater = camera.position.y < water.position.y;
+          const underwaterThreshold = 2; // Units before actual water level
+          isUnderwater = camera.position.y < (water.position.y + underwaterThreshold);
+        // Only process changes to underwater state when it changes
+        if (wasUnderwater !== isUnderwater) {
+            if (isUnderwater) {
+                // Transition to underwater
+                scene.fog = new THREE.FogExp2(underwaterColor, underwaterFogDensity);
+                scene.background = underwaterColor;
+                
+                // Force a solid color background with renderer
+                renderer.setClearColor(underwaterColor, 1);
+                
+                // Hide the sky when underwater
+                if (sky) {
+                    sky.visible = false;
+                }
+                
+                // Make ambient light bluer underwater
+                if (scene.userData.underwaterAmbient) {
+                    scene.userData.underwaterAmbient.visible = true;
+                }
+                
+                // Make directional light dimmer underwater
+                scene.children.forEach(child => {
+                    if (child instanceof THREE.DirectionalLight) {
+                        child.intensity = 0.5;
+                    }
+                });
+            } else {
+                // Transition back to above water
+                scene.fog = null;
+                scene.background = null;
+              
+                
+                
+                // Restore transparent background
+                renderer.setClearColor(0x000000, 0);
+                
+                // Show the sky again
+                if (sky) {
+                    sky.visible = true;
+                }
+                
+                // Restore normal lighting
+                if (scene.userData.underwaterAmbient) {
+                    scene.userData.underwaterAmbient.visible = false;
+                }
+                
+                // Restore directional light intensity
+                scene.children.forEach(child => {
+                    if (child instanceof THREE.DirectionalLight) {
+                        child.intensity = 1.0;
+                    }
+                });
+            }
+        }
+        
+        // Continuous underwater updates
+        if (isUnderwater) {
+            // Make fog darker and denser with increased depth for better abyss effect
+            const depthBelowSurface = water.position.y - camera.position.y;
+            const maxDensity = 0.03;
+            
+            // Cap the density to avoid completely black screen at extreme depths
+            scene.fog.density = Math.min(maxDensity, underwaterFogDensity + (depthBelowSurface * 0.0002));
+            // Transition to underwater - use a deeper blue immediately
+        scene.fog = new THREE.FogExp2(underwaterColor, underwaterFogDensity);
+        scene.background = underwaterColor;
+        
+        // Force a solid color background with renderer - deeper blue
+        renderer.setClearColor(underwaterColor, 1);
+            
+            // Darken the fog color with depth for abyss effect
+            const colorDarkenFactor = Math.min(0.8, depthBelowSurface * 0.01);
+            scene.fog.color.setRGB(
+                underwaterColor.r * (1 - colorDarkenFactor),
+                underwaterColor.g * (1 - colorDarkenFactor),
+                underwaterColor.b * (1 - colorDarkenFactor)
+            );
+              causticPlane.visible = false;
+            // Update renderer clear color to match the fog color
+            renderer.setClearColor(scene.fog.color, 1);
+        }
+    }
+    
+    // Update caustic plane
+    if (causticPlane && water) {
+        if (isUnderwater) {
+            // Always make caustic plane visible underwater
+            causticPlane.visible = true;
+           
+    
+    // Angle the plane to create depth perspective
+    causticPlane.rotation.x = Math.PI/8;
+    
+    // Position it relative to the camera, but pushed forward
+    causticPlane.position.y = camera.position.y - 20;
+    causticPlane.position.z = camera.position.z - 100; 
+    
+    // // Scale based on depth for even more perspective
+    // const scaleFactor = 1 - (depthBelowSurface * 0.05);
+    // causticPlane.scale.set(scaleFactor, 1, scaleFactor);
+          
+            // Position the caustic plane below the camera to create infinite abyss effect
+            // This is the key to the abyss effect - it follows below the camera at a fixed distance
+            // causticPlane.position.y = camera.position.y - 50;
+            
+            // Calculate water depth
+            const waterDepth = water.position.y - groundLevel;
+            
+            // Update caustic time
+            causticTime += 0.01;
+            
+            // Calculate speed based on depth - moves faster as water gets deeper
+            const speed = 0.2 + (waterDepth * 0.01);
+       
+            
+            // Calculate a direction that makes caustics appear to move away
+            // Use sin/cos to create a radial outward movement pattern
+            const moveX = Math.cos(causticTime) * speed;
+            const moveY = Math.sin(causticTime) * speed;
+            
+            // Apply the movement to texture offset
+            causticPlane.material.map.offset.x = moveX;
+            causticPlane.material.map.offset.y = moveY;
+            
+            // Make caustics smaller with depth by increasing repeat
+            const repeatScale = 4 + (waterDepth * 0.1);
+            causticPlane.material.map.repeat.set(-repeatScale, repeatScale);
+            
+            // Vary opacity based on depth - fade out as we go deeper for abyss effect
+            const depthBelowSurface = water.position.y - camera.position.y;
+            causticPlane.material.opacity = Math.max(0.05, 0.7 - (depthBelowSurface * 0.01));
+        } else {
+            // When not underwater, only show caustics above ground
+            if (water.position.y > groundLevel + 0.5) {
+                causticPlane.visible = false;
+                causticPlane.position.y = groundLevel + 0.1;
+                
+                // Make caustics more intense with water depth
+                const waterDepth = water.position.y - groundLevel;
+                causticPlane.material.opacity = Math.min(0.6, 0.2 + (waterDepth * 0.02));
+                
+                // Animate texture offset for above-water caustics too
+                causticTime += 0.005;
+                const speed = 0.1 + (waterDepth * 0.005);
+                causticPlane.material.map.offset.x = Math.cos(causticTime) * speed;
+                causticPlane.material.map.offset.y = Math.sin(causticTime) * speed;
+            } else {
+                causticPlane.visible = false;
+            }
+        }
+    }
+    
+    // Animate caustics - cycle through available textures in reverse
+    if (causticPlane && frameCount % 5 === 0) {
+        // Change from incrementing to decrementing
+        currentCausticIndex = (currentCausticIndex - 1);
+        // Wrap around when we reach negative numbers
+        if (currentCausticIndex < 0) {
+            currentCausticIndex = causticTextures.length - 1;
+        }
+        causticPlane.material.map = causticTextures[currentCausticIndex];
+        causticPlane.material.needsUpdate = true;
+    }
+    
+    frameCount++;
+    
+    renderer.render(scene, camera);
+}
+
+</script>

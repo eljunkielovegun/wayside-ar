@@ -34,7 +34,7 @@ wayside-ar/
 │   │   │   ├── Card.jsx
 │   │   │   ├── Modal.jsx
 │   │   │   ├── Loader.jsx
-│   │   │   └── EmergencyPanel.jsx  # Safety & emergency info panel
+│   │   │   └── EmergencyPanel.jsx  ## Safety & emergency info panel
 │   │   │
 │   │   ├── map/              # Map components
 │   │   │   ├── MapView.jsx           # Map container

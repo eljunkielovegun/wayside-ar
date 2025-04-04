@@ -1,12 +1,285 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Wayside AR</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wayside.at - Climate Change AR Experience</title>
+    
+    <!-- Styles for UI elements -->
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        #water-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            background-color: rgba(0, 0, 0, 0.6);
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 100;
+            display: none;
+        }
+        #year-display {
+            color: white;
+            text-align: center;
+            margin-bottom: 10px;
+            font-family: Arial, sans-serif;
+        }
+        #water-level-slider {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        #slider-labels {
+            display: flex;
+            justify-content: space-between;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .info-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            z-index: 999;
+            pointer-events: none;
+        }
+        .marker-guide {
+            position: fixed;
+            bottom: 80px;
+            left: 10px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            z-index: 999;
+            max-width: 300px;
+        }
+    </style>
+    
+    <!-- Load A-Frame first -->
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    
+    <!-- Load AR.js -->
+    <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.5/aframe/build/aframe-ar.js"></script>
+    
+    <!-- Three.js and dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+    
+    <!-- Our custom components -->
+    <script src="src/three/water/water-material.js"></script>
+    <script src="src/components/ar/ARWaterBridge.js"></script>
 </head>
 <body>
-  <h1>Wayside AR Test</h1>
-  <p><a href="test-pages/basic-ar-test.html">Click here to try the AR test</a></p>
-  <p><a href="test-pages/camera-test.html">Click here to try the Camera  test</a></p>
-  <p><a href="test-pages/minimal-test.html">Click here to try minimal test  test</a></p>
+    <div class="info-panel" id="info">Looking for climate change marker...</div>
+    
+    <div class="marker-guide">
+        <p>Tips for marker detection:</p>
+        <ul>
+            <li>Ensure good lighting</li>
+            <li>Hold marker flat</li>
+            <li>Keep marker fully visible</li>
+            <li>Try different distances</li>
+        </ul>
+    </div>
+    
+    <!-- AR scene container -->
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: true; detectionMode: mono; facingMode: environment"
+             vr-mode-ui="enabled: false"
+             renderer="logarithmicDepthBuffer: true;">
+        <!-- Use existing marker that has been tested -->
+        <a-marker type="pattern" url="https://eljunkielovegun.github.io/wayside-ar/test-pages/mark5.patt"
+                 ar-water-bridge>
+            <!-- Empty entity - water will be added via JavaScript -->
+        </a-marker>
+        
+        <a-entity camera></a-entity>
+    </a-scene>
+    
+    <!-- Water control overlay (initially hidden) -->
+    <div id="water-controls">
+        <div id="year-display">Year: 2030</div>
+        <input type="range" id="water-level-slider" min="0" max="100" value="0">
+        <div id="slider-labels">
+            <span>2030</span>
+            <span>2100</span>
+        </div>
+    </div>
+    
+    <script>
+        // WaterSimulation class - inline for simplicity in this version
+        class WaterSimulation {
+          constructor(targetObject) {
+            console.log("Creating water simulation");
+            
+            // Store reference to the AR.js 3D object
+            this.targetObject = targetObject;
+            
+            // Initialize water parameters
+            this.waterLevel = 0;
+            this.maxWaterRise = 15; // Scaled down for AR view
+            this.targetWaterLevel = 0;
+            this.active = false;
+            
+            // Initialize Three.js objects
+            this.water = null;
+            
+            // Initialize water geometry
+            this.initWater();
+            
+            // Set up slider event
+            document.getElementById('water-level-slider').addEventListener('input', (e) => {
+              const sliderValue = parseInt(e.target.value);
+              this.targetWaterLevel = (sliderValue / 100) * this.maxWaterRise;
+              
+              // Update year display
+              const currentYear = Math.floor(2030 + (sliderValue / 100) * (2100 - 2030));
+              document.getElementById('year-display').innerText = `Year: ${currentYear}`;
+            });
+          }
+          
+          initWater() {
+            // Create a smaller water plane for AR
+            const waterGeometry = new THREE.PlaneGeometry(30, 30);
+            
+            // Load water normal texture
+            const textureLoader = new THREE.TextureLoader();
+            textureLoader.load(
+              'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/waternormals.jpg',
+              (waterNormals) => {
+                waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+                
+                try {
+                  // Create water mesh using THREE.Water from water-material.js
+                  this.water = new THREE.Water(
+                    waterGeometry,
+                    {
+                      textureWidth: 512,
+                      textureHeight: 512,
+                      waterNormals: waterNormals,
+                      alpha: 0.8, // Slightly transparent
+                      sunDirection: new THREE.Vector3(0.70707, 0.70707, 0),
+                      sunColor: 0xffffff,
+                      waterColor: 0x001e0f,
+                      distortionScale: 3.7,
+                      fog: false
+                    }
+                  );
+                  
+                  // Position water relative to marker (slightly above it)
+                  this.water.rotation.x = -Math.PI / 2; // Horizontal plane
+                  this.water.position.y = 0;
+                  
+                  // Add water to the AR marker's 3D object
+                  this.targetObject.add(this.water);
+                  
+                  // Also add measurement column
+                  this.addMeasurementColumn();
+                  
+                  console.log("Water simulation fully initialized");
+                } catch (e) {
+                  console.error("Error creating water:", e);
+                }
+              },
+              undefined,
+              (error) => {
+                console.error("Error loading water texture:", error);
+              }
+            );
+          }
+          
+          // Simplified version of the measurement column
+          addMeasurementColumn() {
+            // Height of the column
+            const columnHeight = this.maxWaterRise * 1.2;
+            
+            // Create the main column (scaled for AR)
+            const columnGeometry = new THREE.BoxGeometry(0.5, columnHeight, 0.5);
+            const columnMaterial = new THREE.MeshStandardMaterial({ 
+              color: 0xcccccc
+            });
+            const column = new THREE.Mesh(columnGeometry, columnMaterial);
+            column.position.set(0, columnHeight / 2, 0);
+            this.targetObject.add(column);
+            
+            // Add lighting to see the column
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(5, 10, 2);
+            this.targetObject.add(light);
+            
+            const ambientLight = new THREE.AmbientLight(0x404040, 1);
+            this.targetObject.add(ambientLight);
+            
+            // Add height markings every 5 units
+            for (let i = 0; i <= this.maxWaterRise; i += 5) {
+              const markerGeometry = new THREE.BoxGeometry(1, 0.2, 0.2);
+              const markerMaterial = new THREE.MeshStandardMaterial({ 
+                color: i % 10 === 0 ? 0xff0000 : 0x000000 
+              });
+              const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+              marker.position.set(0, i, 0.3);
+              this.targetObject.add(marker);
+            }
+          }
+          
+          start() {
+            console.log("Starting water simulation");
+            this.active = true;
+            // Make sure water is visible
+            if (this.water) {
+              this.water.visible = true;
+            }
+          }
+          
+          pause() {
+            console.log("Pausing water simulation");
+            this.active = false;
+          }
+          
+          update() {
+            if (!this.active || !this.water) return;
+            
+            // Animate water waves
+            this.water.material.uniforms['time'].value += 1.0 / 60.0;
+            
+            // Smoothly interpolate water level
+            this.waterLevel += (this.targetWaterLevel - this.waterLevel) * 0.02;
+            this.water.position.y = this.waterLevel;
+            
+            // Adjust water color based on depth
+            const depthFactor = this.waterLevel / this.maxWaterRise;
+            const waterColor = new THREE.Color(
+              0.0, 
+              Math.max(0.05, 0.11 - depthFactor * 0.08), 
+              Math.max(0.05, 0.15 - depthFactor * 0.1)
+            );
+            this.water.material.uniforms['waterColor'].value = waterColor;
+          }
+        }
+
+        // Update the info panel based on marker detection
+        document.addEventListener('DOMContentLoaded', function() {
+            const marker = document.querySelector('a-marker');
+            if (marker) {
+                marker.addEventListener('markerFound', function() {
+                    document.getElementById('info').textContent = "Climate marker detected! Adjust the slider to see future water levels.";
+                });
+                
+                marker.addEventListener('markerLost', function() {
+                    document.getElementById('info').textContent = "Marker lost. Show the marker to continue the experience.";
+                });
+            } else {
+                console.error("Marker element not found");
+                document.getElementById('info').textContent = "Error: Marker element not found";
+            }
+        });
+    </script>
 </body>
 </html>
