@@ -17,12 +17,14 @@
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            width: 300px;
-            background-color: rgba(0, 0, 0, 0.6);
+            width: 80%;
+            max-width: 400px;
+            background-color: rgba(0, 0, 0, 0.7);
             padding: 15px;
             border-radius: 5px;
             z-index: 100;
             display: none;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
         #year-display {
             color: white;
@@ -154,7 +156,7 @@
         </a-marker>
         
         <!-- Fixed position water simulation container -->
-        <a-entity id="water-container" position="0 0 -5">
+        <a-entity id="water-container" position="0 -2 -5" scale="2 2 2">
             <!-- Water will be added to this container -->
         </a-entity>
         

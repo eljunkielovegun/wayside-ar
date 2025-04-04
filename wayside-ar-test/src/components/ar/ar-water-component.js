@@ -45,19 +45,23 @@ AFRAME.registerComponent('ar-water-simulation', {
   
   // Add a visible debug box to confirm positioning works
   addDebugBox: function() {
-    // Create a simple red box for debugging
-    const boxGeom = new THREE.BoxGeometry(1, 1, 1);
-    const boxMat = new THREE.MeshBasicMaterial({color: 0xff0000});
+    // Create a simple red box for debugging - making it tiny and mostly transparent
+    const boxGeom = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+    const boxMat = new THREE.MeshBasicMaterial({
+      color: 0xff0000,
+      transparent: true,
+      opacity: 0.3
+    });
     this.debugBox = new THREE.Mesh(boxGeom, boxMat);
     this.debugBox.position.set(0, 3, 0);
     this.markerObject.add(this.debugBox);
-    console.log("Debug box added");
+    console.log("Debug box added (minimized)");
   },
   
-  // Add a simple water plane
+  // Add a large water plane
   addSimpleWaterPlane: function() {
-    // Create a simple water plane with a blue material
-    const waterGeometry = new THREE.PlaneGeometry(8, 8, 8, 8);
+    // Create a large water plane to fill the view
+    const waterGeometry = new THREE.PlaneGeometry(30, 30, 16, 16);
     
     // Create a shiny blue material to simulate water
     const waterMaterial = new THREE.MeshStandardMaterial({
@@ -72,6 +76,7 @@ AFRAME.registerComponent('ar-water-simulation', {
     this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
     this.waterMesh.rotation.x = -Math.PI / 2; // Make horizontal
     this.waterMesh.position.y = 0;
+    this.waterMesh.position.z = 0; // Centered in view
     
     // Store original vertices for animation
     this.originalVertices = [];
@@ -87,45 +92,51 @@ AFRAME.registerComponent('ar-water-simulation', {
     
     // Add to marker object
     this.markerObject.add(this.waterMesh);
-    console.log("Simple water plane added");
+    console.log("Large water plane added");
   },
   
   // Add measurement column
   addMeasurementColumn: function() {
     const columnHeight = this.data.maxWaterRise * 1.2;
     
-    // Create the main column
-    const columnGeometry = new THREE.BoxGeometry(0.3, columnHeight, 0.3);
+    // Create the main column - making it more visible 
+    const columnGeometry = new THREE.BoxGeometry(0.6, columnHeight, 0.6);
     const columnMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xcccccc,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.8
+      opacity: 0.9
     });
     
     this.column = new THREE.Mesh(columnGeometry, columnMaterial);
     this.column.position.set(0, columnHeight / 2, 0);
     this.markerObject.add(this.column);
     
-    // Add lighting
-    const light = new THREE.DirectionalLight(0xffffff, 1);
+    // Add stronger lighting
+    const light = new THREE.DirectionalLight(0xffffff, 1.2);
     light.position.set(2, 5, 2);
     this.markerObject.add(light);
     
-    const ambientLight = new THREE.AmbientLight(0x404040, 1);
+    const ambientLight = new THREE.AmbientLight(0x606060, 1.2);
     this.markerObject.add(ambientLight);
     
-    // Add height markings
-    for (let i = 0; i <= this.data.maxWaterRise; i += 2) {
-      const markerGeometry = new THREE.BoxGeometry(0.5, 0.1, 0.1);
+    // Add height markings - larger and more visible
+    for (let i = 0; i <= this.data.maxWaterRise; i += 1) {
+      // Only create markers at whole numbers
+      const isSpecial = i % 5 === 0;
+      const markerWidth = isSpecial ? 1.2 : 0.8;
+      const markerHeight = isSpecial ? 0.2 : 0.1;
+      
+      const markerGeometry = new THREE.BoxGeometry(markerWidth, markerHeight, 0.2);
       const markerMaterial = new THREE.MeshStandardMaterial({ 
-        color: i % 5 === 0 ? 0xff0000 : 0x000000 
+        color: isSpecial ? 0xff0000 : 0x000000,
+        emissive: isSpecial ? 0x330000 : 0x000000
       });
       const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.set(0, i, 0.2);
+      marker.position.set(0, i, 0.4);
       this.markerObject.add(marker);
     }
     
-    console.log("Measurement column added");
+    console.log("Enhanced measurement column added");
   },
   
   onMarkerFound: function() {
