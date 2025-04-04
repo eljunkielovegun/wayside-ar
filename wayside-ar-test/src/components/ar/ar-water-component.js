@@ -27,6 +27,31 @@ AFRAME.registerComponent('ar-water-simulation', {
       this.waterMesh = null;
     }
     
+    // Clean up caustic plane if it exists
+    if (this.causticPlane) {
+      if (this.markerObject) {
+        this.markerObject.remove(this.causticPlane);
+      }
+      
+      if (this.causticPlane.geometry) {
+        this.causticPlane.geometry.dispose();
+      }
+      
+      if (this.causticPlane.material) {
+        this.causticPlane.material.dispose();
+      }
+      
+      this.causticPlane = null;
+    }
+    
+    // Clean up caustic textures
+    if (this.causticTextures && this.causticTextures.length) {
+      this.causticTextures.forEach(texture => {
+        if (texture) texture.dispose();
+      });
+      this.causticTextures = [];
+    }
+    
     console.log("Water component removed and cleaned up");
   },
   schema: {
@@ -74,14 +99,28 @@ AFRAME.registerComponent('ar-water-simulation', {
   },
   
   
-  // Add a large water plane based on caustics example
+  // Add a large water plane with caustics
   addSimpleWaterPlane: function() {
-    console.log("Creating water plane");
-    // Create a huge water plane like in the caustics example
+    console.log("Creating water plane with caustics");
+    
+    // Create a huge water plane
     const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
     
     // Create a reference to this component
     const self = this;
+    
+    // Caustic texture URLs from the caustics example
+    const causticUrls = [
+      'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/qf7jbexawjm561gbrnur.bmp',
+      'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/uafyuzgxuqfdslrbnqpm.bmp',
+      'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/yslsrdo3jqqfn8xjfyii.bmp',
+      'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/djxasdkslrqcybelyrom.bmp',
+      'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/ywqy9urvrryjwk32evgv.bmp'
+    ];
+    
+    // Initialize arrays and loaders
+    this.causticTextures = [];
+    const textureLoader = new THREE.TextureLoader();
     
     // Force create a basic material first for immediate display
     const basicMaterial = new THREE.MeshStandardMaterial({
@@ -100,11 +139,35 @@ AFRAME.registerComponent('ar-water-simulation', {
     this.markerObject.add(this.waterMesh);
     console.log("Basic water added for immediate display");
     
+    // Load caustic textures
+    let texturesLoaded = 0;
+    causticUrls.forEach((url, index) => {
+      const texture = textureLoader.load(
+        url,
+        // On load callback
+        () => {
+          texturesLoaded++;
+          console.log(`Loaded caustic texture ${texturesLoaded} of ${causticUrls.length}`);
+          
+          // Make the texture repeat/tile
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.wrapT = THREE.RepeatWrapping;
+          texture.repeat.set(-4, 4);
+          
+          self.causticTextures[index] = texture;
+          
+          // When all textures are loaded, create the caustic plane
+          if (texturesLoaded === causticUrls.length) {
+            self.createCausticPlane();
+          }
+        }
+      );
+    });
+    
     // Try to use the advanced Water shader
     try {
       if (typeof THREE.Water !== 'undefined') {
         // Load water texture
-        const textureLoader = new THREE.TextureLoader();
         textureLoader.load(
           'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/waternormals.jpg',
           function(waterNormals) {
@@ -152,6 +215,33 @@ AFRAME.registerComponent('ar-water-simulation', {
     }
   },
   
+  // Create the caustic projection plane
+  createCausticPlane: function() {
+    // Create a HUGE caustic plane for the abyss effect
+    const causticPlaneGeometry = new THREE.PlaneGeometry(20000, 20000);
+    const causticMaterial = new THREE.MeshBasicMaterial({
+      map: this.causticTextures[0],
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      opacity: 0.5, // Start with visible opacity
+      color: 0xffffff // Use white to preserve texture colors
+    });
+
+    this.causticPlane = new THREE.Mesh(causticPlaneGeometry, causticMaterial);
+    this.causticPlane.rotation.x = -Math.PI / 2; // Horizontal plane
+    
+    // Position it below the water
+    this.causticPlane.position.y = -5; 
+    this.markerObject.add(this.causticPlane);
+    
+    console.log('Caustic plane created');
+    
+    // Initialize animation variables
+    this.causticTime = 0;
+    this.currentCausticIndex = 0;
+    this.frameCount = 0;
+  },
+  
   // Add lighting only - no measurement column
   addLighting: function() {
     // Add stronger lighting only
@@ -183,14 +273,12 @@ AFRAME.registerComponent('ar-water-simulation', {
     // Always update even if marker is not visible
     const now = time * 0.001; // Convert to seconds
     
-    // Log animation status periodically
-    if (time % 3000 < 16) {
+    // Log animation status periodically (less frequently)
+    if (time % 5000 < 16) {
       console.log("Water animation tick:", now);
       if (this.waterMesh && this.waterMesh.material) {
         if (this.waterMesh.material.uniforms) {
-          console.log("Water has uniforms, time value:", 
-            this.waterMesh.material.uniforms['time'] ? 
-            this.waterMesh.material.uniforms['time'].value : "no time uniform");
+          console.log("Water has uniforms");
         } else {
           console.log("Basic water material active");
         }
@@ -233,6 +321,40 @@ AFRAME.registerComponent('ar-water-simulation', {
           this.waterMesh.material.uniforms['waterColor'].value = waterColor;
         }
       }
+    }
+    
+    // Update caustic animation if available
+    if (this.causticPlane && this.causticTextures && this.causticTextures.length > 0) {
+      // Update caustic time
+      this.causticTime += 0.01;
+      
+      // Calculate water depth factor
+      const waterDepth = this.waterLevel;
+      
+      // Calculate speed based on depth - moves faster as water gets deeper
+      const speed = 0.2 + (waterDepth * 0.01);
+      
+      // Calculate direction for caustics movement
+      const moveX = Math.cos(this.causticTime) * speed;
+      const moveY = Math.sin(this.causticTime) * speed;
+      
+      // Apply movement to texture offset
+      this.causticPlane.material.map.offset.x = moveX;
+      this.causticPlane.material.map.offset.y = moveY;
+      
+      // Make caustics more intense with water depth
+      this.causticPlane.material.opacity = Math.min(0.8, 0.3 + (waterDepth * 0.05));
+      
+      // Cycle through available textures to create animation
+      this.frameCount++;
+      if (this.frameCount % 10 === 0) {
+        this.currentCausticIndex = (this.currentCausticIndex + 1) % this.causticTextures.length;
+        this.causticPlane.material.map = this.causticTextures[this.currentCausticIndex];
+        this.causticPlane.material.needsUpdate = true;
+      }
+      
+      // Position caustic plane relative to water level
+      this.causticPlane.position.y = this.waterLevel - 5;
     }
   }
 });
