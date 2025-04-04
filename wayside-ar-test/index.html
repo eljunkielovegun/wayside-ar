@@ -26,6 +26,27 @@
             display: none;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
+        
+        #close-button {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 40px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 50%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-size: 20px;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
         #year-display {
             color: white;
             text-align: center;
@@ -90,8 +111,8 @@
         const climateMarker = document.getElementById('climate-marker');
         const waterContainer = document.getElementById('water-container');
         const infoPanel = document.getElementById('info');
-        const body = document.body;
         const controlPanel = document.getElementById('control-panel');
+        const closeButton = document.getElementById('close-button');
         
         let waterComponentActive = false;
         
@@ -106,33 +127,48 @@
             });
             
             waterComponentActive = true;
-            infoPanel.textContent = "Climate marker detected! Adjust the slider or tap/swipe to dismiss.";
+            infoPanel.textContent = "Climate marker detected! Adjust the slider to see future water levels.";
             
-            // Show controls immediately
+            // Show controls and close button
             controlPanel.style.display = 'block';
+            closeButton.style.display = 'flex';
           }
         });
         
-        // Handle touch events to dismiss the experience
+        // Handle close button click to dismiss the experience
+        closeButton.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dismissExperience();
+        });
+        
+        // Handle touch on close button
+        closeButton.addEventListener('touchend', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          dismissExperience();
+        });
+        
+        // Prevent slider interaction from dismissing experience
+        controlPanel.addEventListener('click', function(e) {
+          e.stopPropagation();
+        });
+        
+        controlPanel.addEventListener('touchend', function(e) {
+          e.stopPropagation();
+        });
+        
+        // Dismiss experience function
         function dismissExperience() {
           if (waterComponentActive) {
             // Remove the water component
             waterContainer.removeAttribute('ar-water-simulation');
             controlPanel.style.display = 'none';
+            closeButton.style.display = 'none';
             infoPanel.textContent = "Experience dismissed. Show the marker again to restart.";
             waterComponentActive = false;
           }
         }
-        
-        // Add tap/swipe listeners
-        body.addEventListener('click', dismissExperience);
-        body.addEventListener('touchend', function(e) {
-          // Only count as swipe if moved more than 10px
-          if (e.changedTouches && e.changedTouches[0] && 
-              Math.abs(e.changedTouches[0].pageX - e.changedTouches[0].clientX) > 10) {
-            dismissExperience();
-          }
-        });
         
         // Setup slider behavior like in caustics demo
         const slider = document.getElementById('water-level-slider');
@@ -189,5 +225,8 @@
             <span>2100</span>
         </div>
     </div>
+    
+    <!-- Close button -->
+    <div id="close-button">✕</div>
 </body>
 </html>
