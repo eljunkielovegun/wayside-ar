@@ -1,5 +1,34 @@
 // Simplified water simulation component for A-Frame
 AFRAME.registerComponent('ar-water-simulation', {
+  // Add method for external cleanup
+  remove: function() {
+    console.log("Water component being removed");
+    
+    // Clean up all resources
+    if (this.waterMesh) {
+      // Remove mesh from parent
+      if (this.markerObject) {
+        this.markerObject.remove(this.waterMesh);
+      }
+      
+      // Dispose of geometries and materials
+      if (this.waterMesh.geometry) {
+        this.waterMesh.geometry.dispose();
+      }
+      
+      if (this.waterMesh.material) {
+        if (Array.isArray(this.waterMesh.material)) {
+          this.waterMesh.material.forEach(m => m.dispose());
+        } else {
+          this.waterMesh.material.dispose();
+        }
+      }
+      
+      this.waterMesh = null;
+    }
+    
+    console.log("Water component removed and cleaned up");
+  },
   schema: {
     maxWaterRise: {type: 'number', default: 10},
     startYear: {type: 'number', default: 2030},

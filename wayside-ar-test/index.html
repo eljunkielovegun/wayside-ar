@@ -161,12 +161,47 @@
         // Dismiss experience function
         function dismissExperience() {
           if (waterComponentActive) {
-            // Remove the water component
+            // Completely remove the water component and clean up
+            try {
+              // First get the component object
+              const waterComponent = waterContainer.components['ar-water-simulation'];
+              
+              // If component has cleanup to do, call it
+              if (waterComponent && waterComponent.waterMesh) {
+                // Remove water mesh from the scene
+                if (waterComponent.markerObject && waterComponent.waterMesh) {
+                  waterComponent.markerObject.remove(waterComponent.waterMesh);
+                }
+                
+                // Dispose of geometries and materials to prevent memory leaks
+                if (waterComponent.waterMesh.geometry) {
+                  waterComponent.waterMesh.geometry.dispose();
+                }
+                
+                if (waterComponent.waterMesh.material) {
+                  if (Array.isArray(waterComponent.waterMesh.material)) {
+                    waterComponent.waterMesh.material.forEach(m => m.dispose());
+                  } else {
+                    waterComponent.waterMesh.material.dispose();
+                  }
+                }
+                
+                console.log("Water mesh removed and disposed");
+              }
+            } catch (e) {
+              console.error("Error cleaning up water component:", e);
+            }
+            
+            // Now remove the component from the entity
             waterContainer.removeAttribute('ar-water-simulation');
+            
+            // Hide UI elements
             controlPanel.style.display = 'none';
             closeButton.style.display = 'none';
             infoPanel.textContent = "Experience dismissed. Show the marker again to restart.";
             waterComponentActive = false;
+            
+            console.log("Experience fully dismissed");
           }
         }
         
