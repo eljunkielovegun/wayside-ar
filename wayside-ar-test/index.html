@@ -12,7 +12,7 @@
             overflow: hidden;
             background-color: #000;
         }
-        #water-controls {
+        #control-panel {
             position: absolute;
             bottom: 20px;
             left: 50%;
@@ -91,6 +91,7 @@
         const waterContainer = document.getElementById('water-container');
         const infoPanel = document.getElementById('info');
         const body = document.body;
+        const controlPanel = document.getElementById('control-panel');
         
         let waterComponentActive = false;
         
@@ -106,6 +107,9 @@
             
             waterComponentActive = true;
             infoPanel.textContent = "Climate marker detected! Adjust the slider or tap/swipe to dismiss.";
+            
+            // Show controls immediately
+            controlPanel.style.display = 'block';
           }
         });
         
@@ -114,7 +118,7 @@
           if (waterComponentActive) {
             // Remove the water component
             waterContainer.removeAttribute('ar-water-simulation');
-            document.getElementById('water-controls').style.display = 'none';
+            controlPanel.style.display = 'none';
             infoPanel.textContent = "Experience dismissed. Show the marker again to restart.";
             waterComponentActive = false;
           }
@@ -128,6 +132,18 @@
               Math.abs(e.changedTouches[0].pageX - e.changedTouches[0].clientX) > 10) {
             dismissExperience();
           }
+        });
+        
+        // Setup slider behavior like in caustics demo
+        const slider = document.getElementById('water-level-slider');
+        slider.addEventListener('input', function(e) {
+          const sliderValue = parseInt(e.target.value);
+          const startYear = 2030;
+          const endYear = 2100;
+          
+          // Update year display based on slider
+          const currentYear = Math.floor(startYear + (sliderValue / 100) * (endYear - startYear));
+          document.getElementById('year-display').innerText = `Year: ${currentYear}`;
         });
       });
     </script>
@@ -156,16 +172,16 @@
             <!-- Marker only used for detection -->
         </a-marker>
         
-        <!-- Fixed position water simulation container - pushed back further -->
-        <a-entity id="water-container" position="0 -10 -30" scale="3 3 3">
+        <!-- Fixed position water simulation container - pushed much further back -->
+        <a-entity id="water-container" position="0 -20 -100" scale="10 10 10">
             <!-- Water will be added to this container -->
         </a-entity>
         
         <a-entity camera></a-entity>
     </a-scene>
     
-    <!-- Water control overlay (initially hidden) -->
-    <div id="water-controls">
+    <!-- Water control overlay similar to caustics example -->
+    <div id="control-panel">
         <div id="year-display">Year: 2030</div>
         <input type="range" id="water-level-slider" min="0" max="100" value="0">
         <div id="slider-labels">

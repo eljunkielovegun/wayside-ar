@@ -132,23 +132,9 @@ AFRAME.registerComponent('ar-water-simulation', {
     );
   },
   
-  // Add measurement column
+  // Add lighting without measurement column
   addMeasurementColumn: function() {
-    const columnHeight = this.data.maxWaterRise * 1.2;
-    
-    // Create the main column - making it more visible 
-    const columnGeometry = new THREE.BoxGeometry(0.6, columnHeight, 0.6);
-    const columnMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.9
-    });
-    
-    this.column = new THREE.Mesh(columnGeometry, columnMaterial);
-    this.column.position.set(0, columnHeight / 2, 0);
-    this.markerObject.add(this.column);
-    
-    // Add stronger lighting
+    // Add stronger lighting only
     const light = new THREE.DirectionalLight(0xffffff, 1.2);
     light.position.set(2, 5, 2);
     this.markerObject.add(light);
@@ -156,24 +142,7 @@ AFRAME.registerComponent('ar-water-simulation', {
     const ambientLight = new THREE.AmbientLight(0x606060, 1.2);
     this.markerObject.add(ambientLight);
     
-    // Add height markings - larger and more visible
-    for (let i = 0; i <= this.data.maxWaterRise; i += 1) {
-      // Only create markers at whole numbers
-      const isSpecial = i % 5 === 0;
-      const markerWidth = isSpecial ? 1.2 : 0.8;
-      const markerHeight = isSpecial ? 0.2 : 0.1;
-      
-      const markerGeometry = new THREE.BoxGeometry(markerWidth, markerHeight, 0.2);
-      const markerMaterial = new THREE.MeshStandardMaterial({ 
-        color: isSpecial ? 0xff0000 : 0x000000,
-        emissive: isSpecial ? 0x330000 : 0x000000
-      });
-      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.set(0, i, 0.4);
-      this.markerObject.add(marker);
-    }
-    
-    console.log("Enhanced measurement column added");
+    console.log("Added scene lighting");
   },
   
   onMarkerFound: function() {
@@ -181,7 +150,7 @@ AFRAME.registerComponent('ar-water-simulation', {
     this.markerVisible = true;
     
     // Show water controls
-    document.getElementById('water-controls').style.display = 'block';
+    document.getElementById('control-panel').style.display = 'block';
   },
   
   onMarkerLost: function() {
@@ -192,6 +161,7 @@ AFRAME.registerComponent('ar-water-simulation', {
   
   tick: function(time, deltaTime) {
     // Always update even if marker is not visible
+    const now = time * 0.001; // Convert to seconds
     
     // If we have the water mesh
     if (this.waterMesh) {
@@ -200,7 +170,7 @@ AFRAME.registerComponent('ar-water-simulation', {
       this.waterMesh.position.y = this.waterLevel;
       
       // Handle water animation depending on water type
-      if (this.waterMesh.material) {
+      if (this.waterMesh.material && !this.waterMesh.material.uniforms) {
         // For standard material - update color based on depth
         const depthFactor = this.waterLevel / this.data.maxWaterRise;
         const waterColor = new THREE.Color(
@@ -212,9 +182,10 @@ AFRAME.registerComponent('ar-water-simulation', {
         this.waterMesh.material.color = waterColor;
       } 
       else if (this.waterMesh.material && this.waterMesh.material.uniforms) {
-        // For the advanced Water shader - update time and color
+        // For the advanced Water shader - actively update time to ensure animation
         if (this.waterMesh.material.uniforms['time']) {
-          this.waterMesh.material.uniforms['time'].value += 1.0 / 60.0;
+          // Ensure we're constantly incrementing time for wave animation
+          this.waterMesh.material.uniforms['time'].value = now;
         }
         
         if (this.waterMesh.material.uniforms['waterColor']) {
