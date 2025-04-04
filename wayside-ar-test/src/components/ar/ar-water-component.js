@@ -58,41 +58,78 @@ AFRAME.registerComponent('ar-water-simulation', {
     console.log("Debug box added (minimized)");
   },
   
-  // Add a large water plane
+  // Add a large water plane based on caustics example
   addSimpleWaterPlane: function() {
-    // Create a large water plane to fill the view
-    const waterGeometry = new THREE.PlaneGeometry(30, 30, 16, 16);
+    // Create a huge water plane like in the caustics example
+    const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
     
-    // Create a shiny blue material to simulate water
-    const waterMaterial = new THREE.MeshStandardMaterial({
-      color: 0x001e0f,
-      metalness: 0.9,
-      roughness: 0.1,
-      transparent: true,
-      opacity: 0.8
-    });
-    
-    // Create the water mesh
-    this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
-    this.waterMesh.rotation.x = -Math.PI / 2; // Make horizontal
-    this.waterMesh.position.y = 0;
-    this.waterMesh.position.z = 0; // Centered in view
-    
-    // Store original vertices for animation
-    this.originalVertices = [];
-    const positions = waterGeometry.attributes.position.array;
-    for (let i = 0; i < positions.length; i += 3) {
-      this.originalVertices.push({
-        x: positions[i],
-        y: positions[i + 1],
-        z: positions[i + 2],
-        phase: Math.random() * Math.PI * 2
-      });
-    }
-    
-    // Add to marker object
-    this.markerObject.add(this.waterMesh);
-    console.log("Large water plane added");
+    // Load water texture if available, otherwise use a basic material
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.load(
+      'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/waternormals.jpg',
+      (waterNormals) => {
+        waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
+        
+        // Try to use the Water object from three.js if available
+        if (typeof THREE.Water !== 'undefined') {
+          // Using the advanced Water shader
+          this.waterMesh = new THREE.Water(
+            waterGeometry,
+            {
+              textureWidth: 512,
+              textureHeight: 512,
+              waterNormals: waterNormals,
+              alpha: 1.0,
+              sunDirection: new THREE.Vector3(0, 1, 0).normalize(),
+              sunColor: 0xffffff,
+              waterColor: 0x001e0f,
+              distortionScale: 3.7,
+              fog: false
+            }
+          );
+          console.log("Advanced water added");
+        } else {
+          // Fallback to basic material with normal map
+          const waterMaterial = new THREE.MeshStandardMaterial({
+            color: 0x001e0f,
+            metalness: 0.9,
+            roughness: 0.1,
+            transparent: true,
+            opacity: 0.8,
+            normalMap: waterNormals,
+            normalScale: new THREE.Vector2(3, 3)
+          });
+          this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
+          console.log("Basic water with normal map added");
+        }
+        
+        // Position the water
+        this.waterMesh.rotation.x = -Math.PI / 2; // Make horizontal
+        this.waterMesh.position.y = 0;
+        this.waterMesh.position.z = -30; // Push further back from camera
+        
+        // Add to marker object
+        this.markerObject.add(this.waterMesh);
+      },
+      // Fallback if texture loading fails
+      () => {
+        console.log("Water texture loading failed, using basic material");
+        const waterMaterial = new THREE.MeshStandardMaterial({
+          color: 0x001e0f,
+          metalness: 0.9,
+          roughness: 0.1,
+          transparent: true,
+          opacity: 0.8
+        });
+        
+        this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
+        this.waterMesh.rotation.x = -Math.PI / 2;
+        this.waterMesh.position.y = 0;
+        this.waterMesh.position.z = -30; // Push further back from camera
+        
+        this.markerObject.add(this.waterMesh);
+      }
+    );
   },
   
   // Add measurement column
@@ -162,31 +199,33 @@ AFRAME.registerComponent('ar-water-simulation', {
       this.waterLevel += (this.targetWaterLevel - this.waterLevel) * 0.05;
       this.waterMesh.position.y = this.waterLevel;
       
-      // Update water color based on depth
-      const depthFactor = this.waterLevel / this.data.maxWaterRise;
-      const waterColor = new THREE.Color(
-        0.0, 
-        Math.max(0.05, 0.11 - depthFactor * 0.08), 
-        Math.max(0.05, 0.15 - depthFactor * 0.1)
-      );
-      this.waterMesh.material.color = waterColor;
-      
-      // Simple wave animation
-      if (this.originalVertices && this.waterMesh.geometry.attributes.position) {
-        const positions = this.waterMesh.geometry.attributes.position.array;
-        const now = time * 0.001; // Convert to seconds
+      // Handle water animation depending on water type
+      if (this.waterMesh.material) {
+        // For standard material - update color based on depth
+        const depthFactor = this.waterLevel / this.data.maxWaterRise;
+        const waterColor = new THREE.Color(
+          0.0, 
+          Math.max(0.05, 0.11 - depthFactor * 0.08), 
+          Math.max(0.05, 0.15 - depthFactor * 0.1)
+        );
         
-        for (let i = 0, j = 0; i < positions.length; i += 3, j++) {
-          const vertex = this.originalVertices[j];
-          
-          // Skip vertices at the edge
-          if (Math.abs(vertex.x) < 3.9 && Math.abs(vertex.z) < 3.9) {
-            // Create wave effect
-            positions[i + 1] = Math.sin(vertex.phase + now + vertex.x) * 0.1;
-          }
+        this.waterMesh.material.color = waterColor;
+      } 
+      else if (this.waterMesh.material && this.waterMesh.material.uniforms) {
+        // For the advanced Water shader - update time and color
+        if (this.waterMesh.material.uniforms['time']) {
+          this.waterMesh.material.uniforms['time'].value += 1.0 / 60.0;
         }
         
-        this.waterMesh.geometry.attributes.position.needsUpdate = true;
+        if (this.waterMesh.material.uniforms['waterColor']) {
+          const depthFactor = this.waterLevel / this.data.maxWaterRise;
+          const waterColor = new THREE.Color(
+            0.0, 
+            Math.max(0.05, 0.11 - depthFactor * 0.08), 
+            Math.max(0.05, 0.15 - depthFactor * 0.1)
+          );
+          this.waterMesh.material.uniforms['waterColor'].value = waterColor;
+        }
       }
     }
     
