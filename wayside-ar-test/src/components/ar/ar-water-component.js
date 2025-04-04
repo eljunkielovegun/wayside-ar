@@ -51,9 +51,22 @@ AFRAME.registerComponent('ar-water-simulation', {
     this.causticPlane3 = null;
     this.abyssPlane = null;
     
-    // Restore original fog if needed
-    if (this.el.sceneEl && this.el.sceneEl.object3D && this.originalFog !== undefined) {
-      this.el.sceneEl.object3D.fog = this.originalFog;
+    // Restore original scene properties
+    if (this.el.sceneEl) {
+      // Restore fog
+      if (this.el.sceneEl.object3D && this.originalFog !== undefined) {
+        this.el.sceneEl.object3D.fog = this.originalFog;
+      }
+      
+      // Restore background color if we changed it for underwater effect
+      if (this.originalBackgroundColor !== null) {
+        this.el.sceneEl.setAttribute('background', {color: this.originalBackgroundColor});
+      }
+      
+      // Reset any renderer changes
+      if (this.el.sceneEl.renderer) {
+        this.el.sceneEl.renderer.setClearColor(0x000000, 0);
+      }
     }
     
     // Clean up caustic textures
@@ -62,6 +75,12 @@ AFRAME.registerComponent('ar-water-simulation', {
         if (texture) texture.dispose();
       });
       this.causticTextures = [];
+    }
+    
+    // Restore normal camera settings
+    if (this.underwaterLight) {
+      this.markerObject.remove(this.underwaterLight);
+      this.underwaterLight = null;
     }
     
     console.log("Water component removed and cleaned up");
@@ -73,15 +92,31 @@ AFRAME.registerComponent('ar-water-simulation', {
   },
   
   init: function() {
-    console.log("Initializing AR Water Simulation component");
+    console.log("Initializing AR Water Simulation component with underwater effect");
     
     // Store state variables
     this.waterLevel = 0;
     this.targetWaterLevel = 0;
     this.markerVisible = false;
+    this.isUnderwater = false;
     
     // Get reference to marker's Three.js object
     this.markerObject = this.el.object3D;
+    
+    // Get reference to scene for global effects
+    this.scene = this.el.sceneEl.object3D;
+    this.camera = this.el.sceneEl.camera;
+    
+    // Store original scene properties to restore later
+    this.originalBackgroundColor = this.el.sceneEl.getAttribute('background') ? 
+                                  this.el.sceneEl.getAttribute('background').color : 
+                                  null;
+    this.originalFog = this.scene.fog;
+    
+    // Define underwater colors
+    this.underwaterColor = new THREE.Color(0x000f0f);  // Darker blue for deep water
+    this.normalFogColor = new THREE.Color(0x87ceeb);   // Sky blue
+    this.underwaterFogDensity = 0.012;  // Increased for better abyss feeling
     
     // IMPORTANT: Add components in proper order
     
@@ -107,7 +142,7 @@ AFRAME.registerComponent('ar-water-simulation', {
       document.getElementById('year-display').innerText = `Year: ${currentYear}`;
     });
     
-    console.log("AR Water component initialized - NO measurement column");
+    console.log("AR Water component initialized with underwater effects");
   },
   
   
@@ -373,7 +408,75 @@ AFRAME.registerComponent('ar-water-simulation', {
       }
     }
     
-    // Constantly update caustic animation - FIXED version
+    // Check if camera is underwater - UNDERWATER EFFECT
+    const cameraY = this.camera ? this.camera.position.y : 0;
+    const wasUnderwater = this.isUnderwater;
+    const underwaterThreshold = 1; // Units above actual water level to start effect
+    this.isUnderwater = this.waterLevel > (cameraY - underwaterThreshold);
+    
+    // Handle underwater state changes
+    if (wasUnderwater !== this.isUnderwater) {
+      console.log(`Underwater state changed: ${this.isUnderwater ? 'entering water' : 'exiting water'}`);
+      
+      if (this.isUnderwater) {
+        // ENTERING UNDERWATER - Apply underwater effects
+        
+        // 1. Add blue fog for underwater feel
+        this.scene.fog = new THREE.FogExp2(this.underwaterColor, this.underwaterFogDensity);
+        
+        // 2. Change scene background color to underwater blue
+        if (this.el.sceneEl.renderer) {
+          this.el.sceneEl.renderer.setClearColor(this.underwaterColor, 1);
+        }
+        if (this.el.sceneEl.setAttribute) {
+          this.el.sceneEl.setAttribute('background', {color: this.underwaterColor.getHexString()});
+        }
+        
+        // 3. Add underwater ambient light if it doesn't exist
+        if (!this.underwaterLight) {
+          this.underwaterLight = new THREE.AmbientLight(0x00334d, 0.8);
+          this.markerObject.add(this.underwaterLight);
+        } else {
+          this.underwaterLight.visible = true;
+        }
+        
+        // 4. Make caustic effects more visible underwater
+        const planes = [this.causticPlane, this.causticPlane2, this.causticPlane3];
+        planes.forEach((plane, i) => {
+          if (plane && plane.material) {
+            plane.material.opacity = 0.9 - (i * 0.1); // Higher opacity underwater
+          }
+        });
+      } else {
+        // EXITING UNDERWATER - Restore normal view
+        
+        // 1. Remove fog
+        this.scene.fog = null;
+        
+        // 2. Restore original background
+        if (this.el.sceneEl.renderer) {
+          this.el.sceneEl.renderer.setClearColor(0x000000, 0); // Transparent
+        }
+        if (this.originalBackgroundColor && this.el.sceneEl.setAttribute) {
+          this.el.sceneEl.setAttribute('background', {color: this.originalBackgroundColor});
+        }
+        
+        // 3. Disable underwater lighting
+        if (this.underwaterLight) {
+          this.underwaterLight.visible = false;
+        }
+        
+        // 4. Reduce caustic intensity above water
+        const planes = [this.causticPlane, this.causticPlane2, this.causticPlane3];
+        planes.forEach((plane, i) => {
+          if (plane && plane.material) {
+            plane.material.opacity = 0.5 - (i * 0.15); // Lower opacity above water
+          }
+        });
+      }
+    }
+    
+    // Constantly update caustic animation - WORKS WITH UNDERWATER
     if (this.causticTextures && this.causticTextures.length > 0) {
       // Update caustic time
       this.causticTime += 0.01;
@@ -381,8 +484,8 @@ AFRAME.registerComponent('ar-water-simulation', {
       // Cycle through available textures to create animation
       this.frameCount++;
 
-      // Always animate at consistent rate (every 6 frames)
-      if (this.frameCount % 6 === 0) {
+      // Always animate at consistent rate (every 5 frames)
+      if (this.frameCount % 5 === 0) {
         // Get next texture index in sequence
         this.currentCausticIndex = (this.currentCausticIndex + 1) % this.causticTextures.length;
         
@@ -396,9 +499,11 @@ AFRAME.registerComponent('ar-water-simulation', {
             plane.material.map = this.causticTextures[texIndex];
             plane.material.needsUpdate = true;
             
-            // Fixed animation patterns - each layer has different speed and direction
-            const baseSpeed = 0.5; // Faster base speed
-            const layerMod = 0.3 - (i * 0.1); // Different speeds per layer
+            // Different animation underwater vs above water
+            const baseSpeed = this.isUnderwater ? 0.7 : 0.4; // Faster underwater
+            const layerMod = this.isUnderwater ? 
+                            (0.4 - (i * 0.1)) : // Stronger movement underwater
+                            (0.2 - (i * 0.05)); // Subtle movement above water
             
             // Radial outward movement pattern
             if (i === 0) {
@@ -418,25 +523,19 @@ AFRAME.registerComponent('ar-water-simulation', {
         }
       }
       
-      // Set water color based on depth
-      const waterDepth = this.waterLevel;
-      
-      // Make all caustic planes always visible, but adjust brightness based on water level
-      const planes = [this.causticPlane, this.causticPlane2, this.causticPlane3];
-      planes.forEach((plane, i) => {
-        if (plane && plane.material) {
-          // Base opacity decreases with each layer
-          const baseOpacity = 0.8 - (i * 0.15);
-          
-          // Increase opacity slightly with water depth
-          const depthBoost = Math.min(0.2, waterDepth * 0.02);
-          plane.material.opacity = baseOpacity + depthBoost;
-        }
-      });
-            
-      // Log animation state periodically
-      if (this.frameCount % 100 === 0) {
-        console.log(`Caustic animation active: water level=${waterDepth.toFixed(2)}, texture=${this.currentCausticIndex}`);
+      // Adjust fog density when underwater based on depth
+      if (this.isUnderwater && this.scene.fog) {
+        const depthBelowSurface = this.waterLevel - cameraY;
+        const maxDensity = 0.03;
+        this.scene.fog.density = Math.min(maxDensity, this.underwaterFogDensity + (depthBelowSurface * 0.001));
+        
+        // Darken fog color with depth
+        const colorDarkenFactor = Math.min(0.8, depthBelowSurface * 0.05);
+        this.scene.fog.color.setRGB(
+          this.underwaterColor.r * (1 - colorDarkenFactor),
+          this.underwaterColor.g * (1 - colorDarkenFactor),
+          this.underwaterColor.b * (1 - colorDarkenFactor)
+        );
       }
     }
   }
