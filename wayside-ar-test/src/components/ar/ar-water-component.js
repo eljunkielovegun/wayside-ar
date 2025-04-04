@@ -27,56 +27,29 @@ AFRAME.registerComponent('ar-water-simulation', {
       this.waterMesh = null;
     }
     
-    // Clean up caustic plane if it exists
-    if (this.causticPlane) {
-      if (this.markerObject) {
-        this.markerObject.remove(this.causticPlane);
-      }
-      
-      if (this.causticPlane.geometry) {
-        this.causticPlane.geometry.dispose();
-      }
-      
-      if (this.causticPlane.material) {
-        this.causticPlane.material.dispose();
-      }
-      
-      this.causticPlane = null;
-    }
+    // Clean up all caustic planes
+    const planes = [this.causticPlane, this.causticPlane2, this.causticPlane3, this.abyssPlane];
     
-    // Clean up second caustic plane
-    if (this.causticPlane2) {
-      if (this.markerObject) {
-        this.markerObject.remove(this.causticPlane2);
+    planes.forEach(plane => {
+      if (plane) {
+        if (this.markerObject) {
+          this.markerObject.remove(plane);
+        }
+        
+        if (plane.geometry) {
+          plane.geometry.dispose();
+        }
+        
+        if (plane.material) {
+          plane.material.dispose();
+        }
       }
-      
-      if (this.causticPlane2.geometry) {
-        this.causticPlane2.geometry.dispose();
-      }
-      
-      if (this.causticPlane2.material) {
-        this.causticPlane2.material.dispose();
-      }
-      
-      this.causticPlane2 = null;
-    }
+    });
     
-    // Clean up abyss plane
-    if (this.abyssPlane) {
-      if (this.markerObject) {
-        this.markerObject.remove(this.abyssPlane);
-      }
-      
-      if (this.abyssPlane.geometry) {
-        this.abyssPlane.geometry.dispose();
-      }
-      
-      if (this.abyssPlane.material) {
-        this.abyssPlane.material.dispose();
-      }
-      
-      this.abyssPlane = null;
-    }
+    this.causticPlane = null;
+    this.causticPlane2 = null;
+    this.causticPlane3 = null;
+    this.abyssPlane = null;
     
     // Restore original fog if needed
     if (this.el.sceneEl && this.el.sceneEl.object3D && this.originalFog !== undefined) {
@@ -256,38 +229,47 @@ AFRAME.registerComponent('ar-water-simulation', {
   
   // Create the caustic projection plane for infinite abyss effect
   createCausticPlane: function() {
-    // Create a HUGE caustic plane for the abyss effect
-    const causticPlaneGeometry = new THREE.PlaneGeometry(50000, 50000);
-    const causticMaterial = new THREE.MeshBasicMaterial({
-      map: this.causticTextures[0],
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      opacity: 0.7, // More visible opacity
-      color: 0xffffff // Use white to preserve texture colors
-    });
-
-    this.causticPlane = new THREE.Mesh(causticPlaneGeometry, causticMaterial);
+    console.log("Creating FIXED caustic effect");
     
-    // Angle the plane to create infinite abyss perspective
-    this.causticPlane.rotation.x = Math.PI/8;
-    
-    // Position it to fill the view below water
-    this.causticPlane.position.set(0, -30, -100);
-    this.markerObject.add(this.causticPlane);
-    
-    // Create a second caustic plane for layering effect
-    const causticMaterial2 = new THREE.MeshBasicMaterial({
-      map: this.causticTextures[1],
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      opacity: 0.5,
-      color: 0xaaffff // Slightly blue tint
-    });
-    
-    this.causticPlane2 = new THREE.Mesh(causticPlaneGeometry.clone(), causticMaterial2);
-    this.causticPlane2.rotation.x = Math.PI/6; // Different angle
-    this.causticPlane2.position.set(0, -50, -150);
-    this.markerObject.add(this.causticPlane2);
+    // Create multiple caustic planes
+    for (let i = 0; i < 3; i++) {
+      // Create a caustic plane that will always be visible
+      const planeSize = 20000 + (i * 15000); // Varying sizes
+      const causticPlaneGeometry = new THREE.PlaneGeometry(planeSize, planeSize);
+      
+      // Create material with high brightness
+      const causticMaterial = new THREE.MeshBasicMaterial({
+        map: this.causticTextures[i % this.causticTextures.length],
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        opacity: 0.8 - (i * 0.15), // Varying opacity
+        color: 0xffffff // White to preserve texture colors
+      });
+      
+      // Create the mesh
+      const plane = new THREE.Mesh(causticPlaneGeometry, causticMaterial);
+      
+      // Position in a way that's always visible regardless of water level
+      // Use flat rotation so it's always facing the camera
+      plane.rotation.x = -Math.PI / 2;
+      
+      // Fixed Y position much lower than the water
+      const yPos = -50 - (i * 30);
+      plane.position.set(0, yPos, 0);
+      
+      // Store references
+      if (i === 0) {
+        this.causticPlane = plane;
+      } else if (i === 1) {
+        this.causticPlane2 = plane;
+      } else {
+        this.causticPlane3 = plane;
+      }
+      
+      // Add to the scene
+      this.markerObject.add(plane);
+      console.log(`Added caustic plane ${i} at y=${yPos}`);
+    }
     
     // Create a dark plane below for the abyss effect
     const abyssGeometry = new THREE.PlaneGeometry(100000, 100000);
@@ -298,22 +280,16 @@ AFRAME.registerComponent('ar-water-simulation', {
     });
     
     this.abyssPlane = new THREE.Mesh(abyssGeometry, abyssMaterial);
-    this.abyssPlane.rotation.x = Math.PI/2; // Flat
+    this.abyssPlane.rotation.x = -Math.PI / 2; // Same as caustics
     this.abyssPlane.position.y = -200;
     this.markerObject.add(this.abyssPlane);
-    
-    // Add a fog effect to the scene for depth
-    if (this.el.sceneEl && this.el.sceneEl.object3D) {
-      this.originalFog = this.el.sceneEl.object3D.fog;
-      this.el.sceneEl.object3D.fog = new THREE.FogExp2(0x000005, 0.002);
-    }
-    
-    console.log('Caustic infinite abyss effect created');
     
     // Initialize animation variables
     this.causticTime = 0;
     this.currentCausticIndex = 0;
     this.frameCount = 0;
+    
+    console.log('Caustic planes created with fixed positioning');
   },
   
   // Add lighting only - no measurement column
@@ -397,69 +373,70 @@ AFRAME.registerComponent('ar-water-simulation', {
       }
     }
     
-    // Update caustic animation if available - Infinite Abyss Effect
-    if (this.causticPlane && this.causticTextures && this.causticTextures.length > 0) {
+    // Constantly update caustic animation - FIXED version
+    if (this.causticTextures && this.causticTextures.length > 0) {
       // Update caustic time
       this.causticTime += 0.01;
       
-      // Calculate water depth factor
-      const waterDepth = this.waterLevel;
-      
-      // Calculate speed based on depth - moves faster as water gets deeper
-      const speed = 0.3 + (waterDepth * 0.02);
-      
-      // Calculate direction for caustics movement - radial outward pattern
-      const moveX = Math.cos(this.causticTime) * speed;
-      const moveY = Math.sin(this.causticTime) * speed;
-      
-      // Apply movement to first caustic plane's texture
-      if (this.causticPlane.material && this.causticPlane.material.map) {
-        this.causticPlane.material.map.offset.x = moveX;
-        this.causticPlane.material.map.offset.y = moveY;
-      }
-      
-      // Apply opposite movement to second caustic plane for parallax effect
-      if (this.causticPlane2 && this.causticPlane2.material && this.causticPlane2.material.map) {
-        this.causticPlane2.material.map.offset.x = -moveX * 0.7;
-        this.causticPlane2.material.map.offset.y = moveY * 0.7;
-      }
-      
-      // Make caustics more intense with water depth
-      if (this.causticPlane.material) {
-        this.causticPlane.material.opacity = Math.min(0.9, 0.4 + (waterDepth * 0.05));
-      }
-      
-      if (this.causticPlane2 && this.causticPlane2.material) {
-        this.causticPlane2.material.opacity = Math.min(0.7, 0.3 + (waterDepth * 0.03));
-      }
-      
       // Cycle through available textures to create animation
       this.frameCount++;
-      if (this.frameCount % 8 === 0) {
-        // Get next texture index in sequence (or first if we reached the end)
+
+      // Always animate at consistent rate (every 6 frames)
+      if (this.frameCount % 6 === 0) {
+        // Get next texture index in sequence
         this.currentCausticIndex = (this.currentCausticIndex + 1) % this.causticTextures.length;
         
-        // Update main caustic plane texture
-        if (this.causticPlane && this.causticPlane.material) {
-          this.causticPlane.material.map = this.causticTextures[this.currentCausticIndex];
-          this.causticPlane.material.needsUpdate = true;
-        }
-        
-        // Update second caustic plane with different texture for more variation
-        if (this.causticPlane2 && this.causticPlane2.material) {
-          const secondIndex = (this.currentCausticIndex + 2) % this.causticTextures.length;
-          this.causticPlane2.material.map = this.causticTextures[secondIndex];
-          this.causticPlane2.material.needsUpdate = true;
+        // Update texture on all caustic planes with different ones
+        for (let i = 0; i < 3; i++) {
+          const plane = i === 0 ? this.causticPlane : 
+                       (i === 1 ? this.causticPlane2 : this.causticPlane3);
+                       
+          if (plane && plane.material && plane.material.map) {
+            const texIndex = (this.currentCausticIndex + i) % this.causticTextures.length;
+            plane.material.map = this.causticTextures[texIndex];
+            plane.material.needsUpdate = true;
+            
+            // Fixed animation patterns - each layer has different speed and direction
+            const baseSpeed = 0.5; // Faster base speed
+            const layerMod = 0.3 - (i * 0.1); // Different speeds per layer
+            
+            // Radial outward movement pattern
+            if (i === 0) {
+              // First plane: clockwise
+              plane.material.map.offset.x = Math.cos(this.causticTime * baseSpeed) * layerMod;
+              plane.material.map.offset.y = Math.sin(this.causticTime * baseSpeed) * layerMod;
+            } else if (i === 1) {
+              // Second plane: counter-clockwise
+              plane.material.map.offset.x = Math.sin(this.causticTime * (baseSpeed * 0.8)) * layerMod;
+              plane.material.map.offset.y = Math.cos(this.causticTime * (baseSpeed * 0.8)) * layerMod;
+            } else {
+              // Third plane: diagonal
+              plane.material.map.offset.x = Math.sin(this.causticTime * (baseSpeed * 0.6)) * layerMod;
+              plane.material.map.offset.y = Math.sin(this.causticTime * (baseSpeed * 0.6) + Math.PI/4) * layerMod;
+            }
+          }
         }
       }
       
-      // Adjust fog density based on water level for abyss effect
-      if (this.el.sceneEl && this.el.sceneEl.object3D && this.el.sceneEl.object3D.fog) {
-        // Increase fog density with water depth for more dramatic abyss feel
-        const baseDensity = 0.002;
-        const maxDensity = 0.01;
-        const fogDensity = Math.min(maxDensity, baseDensity + (waterDepth * 0.0005));
-        this.el.sceneEl.object3D.fog.density = fogDensity;
+      // Set water color based on depth
+      const waterDepth = this.waterLevel;
+      
+      // Make all caustic planes always visible, but adjust brightness based on water level
+      const planes = [this.causticPlane, this.causticPlane2, this.causticPlane3];
+      planes.forEach((plane, i) => {
+        if (plane && plane.material) {
+          // Base opacity decreases with each layer
+          const baseOpacity = 0.8 - (i * 0.15);
+          
+          // Increase opacity slightly with water depth
+          const depthBoost = Math.min(0.2, waterDepth * 0.02);
+          plane.material.opacity = baseOpacity + depthBoost;
+        }
+      });
+            
+      // Log animation state periodically
+      if (this.frameCount % 100 === 0) {
+        console.log(`Caustic animation active: water level=${waterDepth.toFixed(2)}, texture=${this.currentCausticIndex}`);
       }
     }
   }
