@@ -1,12 +1,3 @@
-/**
- * ar-water-simulation.js - A-Frame component for water simulation in AR
- * 
- * This component handles:
- * 1. Creating a Three.js water simulation
- * 2. Adding it to the marker's Three.js object
- * 3. Updating it when the marker is visible
- */
-
 AFRAME.registerComponent('ar-water-simulation', {
   schema: {
     maxWaterRise: {type: 'number', default: 10},
@@ -22,14 +13,12 @@ AFRAME.registerComponent('ar-water-simulation', {
     this.targetWaterLevel = 0;
     this.markerVisible = false;
     
-    // Get references to Three.js objects
+    // Get reference to marker's Three.js object
     this.markerObject = this.el.object3D;
-    this.scene = this.el.sceneEl.object3D;
-    this.renderer = this.el.sceneEl.renderer;
-    this.camera = this.el.sceneEl.camera;
     
-    // Initialize water simulation
-    this.initWaterSimulation();
+    // Add a simple water and column implementation
+    this.addSimpleWater();
+    this.addMeasurementColumn();
     
     // Set up marker detection events
     this.el.addEventListener('markerFound', this.onMarkerFound.bind(this));
@@ -42,67 +31,51 @@ AFRAME.registerComponent('ar-water-simulation', {
       
       // Update year display
       const currentYear = Math.floor(this.data.startYear + 
-                                    (sliderValue / 100) * 
-                                    (this.data.endYear - this.data.startYear));
+                                     (sliderValue / 100) * 
+                                     (this.data.endYear - this.data.startYear));
       document.getElementById('year-display').innerText = `Year: ${currentYear}`;
     });
   },
   
-  initWaterSimulation: function() {
-    // Create a water plane geometry
-    const waterGeometry = new THREE.PlaneGeometry(8, 8);
+  addSimpleWater: function() {
+    // Create a simple water plane with a blue material
+    const waterGeometry = new THREE.PlaneGeometry(8, 8, 32, 32);
     
-    // Load water normal texture
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(
-      'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/waternormals.jpg',
-      (waterNormals) => {
-        waterNormals.wrapS = waterNormals.wrapT = THREE.RepeatWrapping;
-        
-        try {
-          // Create Three.js Water object
-          this.water = new THREE.Water(
-            this.renderer,
-            this.camera,
-            this.scene,
-            {
-              textureWidth: 256,
-              textureHeight: 256,
-              waterNormals: waterNormals,
-              alpha: 0.8,
-              sunDirection: new THREE.Vector3(0.70707, 0.70707, 0),
-              waterColor: 0x001e0f,
-              distortionScale: 3.7,
-              fog: false
-            }
-          );
-          
-          // Create a mesh to hold the water material
-          this.waterMesh = new THREE.Mesh(
-            waterGeometry, 
-            this.water.material
-          );
-          
-          // Set initial position
-          this.waterMesh.rotation.x = -Math.PI / 2; // Horizontal plane
-          this.waterMesh.position.y = 0;
-          
-          // Add the water mesh to the marker object
-          this.markerObject.add(this.waterMesh);
-          
-          // Add measurement column
-          this.addMeasurementColumn();
-          
-          console.log("Water simulation initialized");
-        } catch (e) {
-          console.error("Error creating water:", e);
-        }
-      },
-      undefined,
-      (error) => {
-        console.error("Error loading water texture:", error);
-      }
-    );
+    // Create a simple blue material with transparency
+    const waterMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0x001e0f,
+      transparent: true,
+      opacity: 0.85,
+      metalness: 0.1,
+      roughness: 0.3,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.4,
+      reflectivity: 0.5
+    });
+    
+    // Create mesh and position it
+    this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
+    this.waterMesh.rotation.x = -Math.PI / 2; // Horizontal plane
+    this.waterMesh.position.y = 0;
+    
+    // Add simple wave animation to vertices
+    this.waterGeometry = waterGeometry;
+    this.originalVertices = [];
+    const vertices = waterGeometry.attributes.position.array;
+    
+    // Store original vertex positions
+    for (let i = 0; i < vertices.length; i += 3) {
+      this.originalVertices.push({
+        x: vertices[i],
+        y: vertices[i + 1],
+        z: vertices[i + 2],
+        angle: Math.random() * Math.PI * 2
+      });
+    }
+    
+    // Add the water mesh to the marker object
+    this.markerObject.add(this.waterMesh);
+    console.log("Simple water added");
   },
   
   addMeasurementColumn: function() {
@@ -139,6 +112,8 @@ AFRAME.registerComponent('ar-water-simulation', {
       marker.position.set(0, i, 0.2);
       this.markerObject.add(marker);
     }
+    
+    console.log("Measurement column added");
   },
   
   onMarkerFound: function() {
@@ -160,25 +135,37 @@ AFRAME.registerComponent('ar-water-simulation', {
   },
   
   tick: function(time, deltaTime) {
-    if (!this.markerVisible || !this.water || !this.waterMesh) return;
+    if (!this.markerVisible || !this.waterMesh) return;
     
-    // Update water animation
-    this.water.material.uniforms.time.value += deltaTime * 0.001;
-    
-    // Smoothly interpolate water level
+    // Update water position based on slider
     this.waterLevel += (this.targetWaterLevel - this.waterLevel) * 0.05;
     this.waterMesh.position.y = this.waterLevel;
     
-    // Update water color based on depth
-    const depthFactor = this.waterLevel / this.data.maxWaterRise;
-    const waterColor = new THREE.Color(
-      0.0,
-      Math.max(0.05, 0.11 - depthFactor * 0.08),
-      Math.max(0.05, 0.15 - depthFactor * 0.1)
-    );
-    this.water.material.uniforms.waterColor.value = waterColor;
+    // Animate water surface with simple waves
+    if (this.waterGeometry && this.originalVertices) {
+      const vertices = this.waterGeometry.attributes.position.array;
+      
+      for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
+        const vertex = this.originalVertices[j];
+        vertex.angle += 0.01;
+        
+        // Create gentle waves
+        const waveHeight = 0.05 * (1.0 + Math.sin(vertex.angle));
+        
+        vertices[i + 2] = vertex.z + waveHeight;
+      }
+      
+      this.waterGeometry.attributes.position.needsUpdate = true;
+    }
     
-    // Render the water reflections
-    this.water.render();
+    // Update water color based on depth
+    if (this.waterMesh.material) {
+      const depthFactor = this.waterLevel / this.data.maxWaterRise;
+      const r = 0.0;
+      const g = Math.max(0.05, 0.11 - depthFactor * 0.08);
+      const b = Math.max(0.05, 0.15 - depthFactor * 0.1);
+      
+      this.waterMesh.material.color.setRGB(r, g, b);
+    }
   }
 });
