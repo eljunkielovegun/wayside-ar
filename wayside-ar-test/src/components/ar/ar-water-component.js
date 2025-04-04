@@ -129,25 +129,21 @@ AFRAME.registerComponent('ar-water-simulation', {
   },
   
   onMarkerFound: function() {
-    console.log("Marker found!");
+    console.log("Water component activated!");
     this.markerVisible = true;
     
     // Show water controls
     document.getElementById('water-controls').style.display = 'block';
-    document.getElementById('info').textContent = "Climate marker detected! Adjust the slider to see future water levels.";
   },
   
   onMarkerLost: function() {
-    console.log("Marker lost!");
-    this.markerVisible = false;
-    
-    // Hide water controls
-    document.getElementById('water-controls').style.display = 'none';
-    document.getElementById('info').textContent = "Marker lost. Show the marker to continue the experience.";
+    console.log("Water component marker reference lost!");
+    // We no longer hide controls or change visibility
+    // The component stays active until dismissed by click/swipe
   },
   
   tick: function(time, deltaTime) {
-    if (!this.markerVisible) return;
+    // Always update even if marker is not visible
     
     // If we have the water mesh
     if (this.waterMesh) {

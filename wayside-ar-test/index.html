@@ -79,6 +79,55 @@
     
     <!-- Our custom AR water component -->
     <script src="./src/components/ar/ar-water-component.js"></script>
+    
+    <!-- Water experience controller -->
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        // Get references to key elements
+        const climateMarker = document.getElementById('climate-marker');
+        const waterContainer = document.getElementById('water-container');
+        const infoPanel = document.getElementById('info');
+        const body = document.body;
+        
+        let waterComponentActive = false;
+        
+        // When marker is found, activate water component
+        climateMarker.addEventListener('markerFound', function() {
+          if (!waterComponentActive) {
+            // Apply the water simulation component to the fixed container
+            waterContainer.setAttribute('ar-water-simulation', {
+              maxWaterRise: 10,
+              startYear: 2030,
+              endYear: 2100
+            });
+            
+            waterComponentActive = true;
+            infoPanel.textContent = "Climate marker detected! Adjust the slider or tap/swipe to dismiss.";
+          }
+        });
+        
+        // Handle touch events to dismiss the experience
+        function dismissExperience() {
+          if (waterComponentActive) {
+            // Remove the water component
+            waterContainer.removeAttribute('ar-water-simulation');
+            document.getElementById('water-controls').style.display = 'none';
+            infoPanel.textContent = "Experience dismissed. Show the marker again to restart.";
+            waterComponentActive = false;
+          }
+        }
+        
+        // Add tap/swipe listeners
+        body.addEventListener('click', dismissExperience);
+        body.addEventListener('touchend', function(e) {
+          // Only count as swipe if moved more than 10px
+          if (e.changedTouches && e.changedTouches[0] && 
+              Math.abs(e.changedTouches[0].pageX - e.changedTouches[0].clientX) > 10) {
+            dismissExperience();
+          }
+        });
+      });
+    </script>
 </head>
 <body>
     <div class="info-panel" id="info">Looking for climate change marker...</div>
@@ -100,9 +149,14 @@
         
         <!-- Use existing marker that has been tested -->
         <a-marker type="pattern" url="https://eljunkielovegun.github.io/wayside-ar/test-pages/mark5.patt"
-                 ar-water-simulation="maxWaterRise: 10; startYear: 2030; endYear: 2100">
-            <!-- Water will be added by component -->
+                 id="climate-marker">
+            <!-- Marker only used for detection -->
         </a-marker>
+        
+        <!-- Fixed position water simulation container -->
+        <a-entity id="water-container" position="0 0 -5">
+            <!-- Water will be added to this container -->
+        </a-entity>
         
         <a-entity camera></a-entity>
     </a-scene>
