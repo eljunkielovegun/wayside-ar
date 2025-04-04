@@ -16,9 +16,11 @@ AFRAME.registerComponent('ar-water-simulation', {
     // Get reference to marker's Three.js object
     this.markerObject = this.el.object3D;
     
-    // Add a simple water and column implementation
-    this.addSimpleWater();
-    this.addMeasurementColumn();
+    // Scene reference
+    this.scene = this.el.sceneEl.object3D;
+    
+    // Initialize water simulation
+    this.initWater();
     
     // Set up marker detection events
     this.el.addEventListener('markerFound', this.onMarkerFound.bind(this));
@@ -37,15 +39,17 @@ AFRAME.registerComponent('ar-water-simulation', {
     });
   },
   
-  addSimpleWater: function() {
-    // Create a simple water plane with a blue material
-    const waterGeometry = new THREE.PlaneGeometry(8, 8, 32, 32);
+  initWater: function() {
+    console.log("Initializing water...");
     
-    // Create a simple blue material with transparency
+    // Create a water plane
+    const waterGeometry = new THREE.PlaneGeometry(10, 10, 10, 10);
+    
+    // Use the water approach from your codepen
     const waterMaterial = new THREE.MeshPhysicalMaterial({
       color: 0x001e0f,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.8,
       metalness: 0.1,
       roughness: 0.3,
       clearcoat: 0.6,
@@ -53,67 +57,56 @@ AFRAME.registerComponent('ar-water-simulation', {
       reflectivity: 0.5
     });
     
-    // Create mesh and position it
-    this.waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
-    this.waterMesh.rotation.x = -Math.PI / 2; // Horizontal plane
-    this.waterMesh.position.y = 0;
+    // Create the water mesh
+    this.water = new THREE.Mesh(waterGeometry, waterMaterial);
+    this.water.rotation.x = -Math.PI / 2; // Make it horizontal
+    this.water.position.y = 0; // Start at ground level
     
-    // Add simple wave animation to vertices
-    this.waterGeometry = waterGeometry;
-    this.originalVertices = [];
-    const vertices = waterGeometry.attributes.position.array;
+    // Add water to the marker
+    this.markerObject.add(this.water);
+    console.log("Water added to marker");
     
-    // Store original vertex positions
-    for (let i = 0; i < vertices.length; i += 3) {
-      this.originalVertices.push({
-        x: vertices[i],
-        y: vertices[i + 1],
-        z: vertices[i + 2],
-        angle: Math.random() * Math.PI * 2
-      });
-    }
+    // Add measurement column and scale down for AR
+    this.addMeasurementColumn();
     
-    // Add the water mesh to the marker object
-    this.markerObject.add(this.waterMesh);
-    console.log("Simple water added");
+    // Add lighting
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5, 10, 2);
+    this.markerObject.add(light);
+    
+    const ambientLight = new THREE.AmbientLight(0x404040, 1);
+    this.markerObject.add(ambientLight);
+    
+    console.log("Water initialization complete");
   },
   
   addMeasurementColumn: function() {
+    // Height of the column
     const columnHeight = this.data.maxWaterRise * 1.2;
     
-    // Create a measurement column
+    // Create the main column (scaled for AR)
     const columnGeometry = new THREE.BoxGeometry(0.3, columnHeight, 0.3);
-    const columnMaterial = new THREE.MeshStandardMaterial({
+    const columnMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xcccccc,
       transparent: true,
       opacity: 0.8
     });
     
-    this.measurementColumn = new THREE.Mesh(columnGeometry, columnMaterial);
-    this.measurementColumn.position.set(0, columnHeight / 2, 0);
-    this.markerObject.add(this.measurementColumn);
+    const column = new THREE.Mesh(columnGeometry, columnMaterial);
+    column.position.set(0, columnHeight / 2, 0);
+    this.markerObject.add(column);
+    console.log("Measurement column added");
     
-    // Add lighting
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(2, 5, 2);
-    this.markerObject.add(light);
-    
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    this.markerObject.add(ambientLight);
-    
-    // Add measurement markings
+    // Add height markings every 2 units
     for (let i = 0; i <= this.data.maxWaterRise; i += 2) {
       const markerGeometry = new THREE.BoxGeometry(0.5, 0.1, 0.1);
-      const markerMaterial = new THREE.MeshStandardMaterial({
-        color: i % 5 === 0 ? 0xff0000 : 0x000000
+      const markerMaterial = new THREE.MeshStandardMaterial({ 
+        color: i % 5 === 0 ? 0xff0000 : 0x000000 
       });
-      
       const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.set(0, i, 0.2);
+      marker.position.set(0, i, 0.3);
       this.markerObject.add(marker);
     }
-    
-    console.log("Measurement column added");
   },
   
   onMarkerFound: function() {
@@ -135,37 +128,40 @@ AFRAME.registerComponent('ar-water-simulation', {
   },
   
   tick: function(time, deltaTime) {
-    if (!this.markerVisible || !this.waterMesh) return;
+    if (!this.markerVisible || !this.water) return;
     
-    // Update water position based on slider
-    this.waterLevel += (this.targetWaterLevel - this.waterLevel) * 0.05;
-    this.waterMesh.position.y = this.waterLevel;
+    // Smoothly interpolate water level
+    this.waterLevel += (this.targetWaterLevel - this.waterLevel) * 0.02;
+    this.water.position.y = this.waterLevel;
     
-    // Animate water surface with simple waves
-    if (this.waterGeometry && this.originalVertices) {
-      const vertices = this.waterGeometry.attributes.position.array;
+    // Adjust water color based on depth
+    const depthFactor = this.waterLevel / this.data.maxWaterRise;
+    const waterColor = new THREE.Color(
+      0.0, 
+      Math.max(0.05, 0.11 - depthFactor * 0.08), 
+      Math.max(0.05, 0.15 - depthFactor * 0.1)
+    );
+    this.water.material.color = waterColor;
+    
+    // Animate the water vertices to create waves
+    if (this.water.geometry.attributes && this.water.geometry.attributes.position) {
+      const positions = this.water.geometry.attributes.position.array;
+      const now = Date.now() * 0.001; // Convert to seconds
       
-      for (let i = 0, j = 0; i < vertices.length; i += 3, j++) {
-        const vertex = this.originalVertices[j];
-        vertex.angle += 0.01;
-        
-        // Create gentle waves
-        const waveHeight = 0.05 * (1.0 + Math.sin(vertex.angle));
-        
-        vertices[i + 2] = vertex.z + waveHeight;
+      for (let i = 0; i < positions.length; i += 3) {
+        // Skip first and last vertices to keep edges stable
+        if (i > 0 && i < positions.length - 3) {
+          const x = positions[i];
+          const z = positions[i + 2];
+          
+          // Create gentle wave animation
+          positions[i + 1] = Math.sin(x + now) * 0.1 + 
+                             Math.sin(z + now * 0.5) * 0.1;
+        }
       }
       
-      this.waterGeometry.attributes.position.needsUpdate = true;
-    }
-    
-    // Update water color based on depth
-    if (this.waterMesh.material) {
-      const depthFactor = this.waterLevel / this.data.maxWaterRise;
-      const r = 0.0;
-      const g = Math.max(0.05, 0.11 - depthFactor * 0.08);
-      const b = Math.max(0.05, 0.15 - depthFactor * 0.1);
-      
-      this.waterMesh.material.color.setRGB(r, g, b);
+      this.water.geometry.attributes.position.needsUpdate = true;
+      this.water.geometry.computeVertexNormals();
     }
   }
 });
