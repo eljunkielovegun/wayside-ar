@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js Flood Demo – Stable Sparkle & Gentle Chop</title>
+  <style>
+    body{margin:0;overflow:hidden;font-family:Arial,Helvetica,sans-serif;background:#000}
+    #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.8);color:#fff;font-size:18px;z-index:999}
+    #info{position:absolute;top:10px;width:100%;text-align:center;color:#fff;font-size:14px;pointer-events:none;z-index:100}
+    #controls{position:absolute;bottom:20px;width:100%;text-align:center;z-index:100}
+    #control-panel{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);width:320px;padding:15px;z-index:100;display:none}
+    #year-display,#slider-labels span{color:#fff;font-size:12px;user-select:none}
+    #water-level-slider{width:100%}
+    button{background:#4caf50;color:#fff;border:none;padding:10px 20px;margin:4px 2px;font-size:16px;cursor:pointer;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div id="loading">Loading assets… please wait</div>
+  <div id="info">Three.js Flood Demo</div>
+  <div id="controls">
+    <button id="startFlood">Start Flood</button>
+    <button id="resetScene">Reset Scene</button>
+  </div>
+  <div id="control-panel">
+    <div id="year-display">Year: 2030</div>
+    <input type="range" id="water-level-slider" min="0" max="100" value="0" />
+    <div id="slider-labels"><span>2030</span><span>2100</span></div>
+  </div>
+  <script type="module">
+    import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js';
+    import { Water } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/objects/Water.js';
+    import { Sky } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/objects/Sky.js';
+
+    // ---------- Globals ---------- //
+    let camera, scene, renderer, controls;
+    let water, sky, sun, foamParticles, floorMesh, causticPlane;
+    let floodStarted=false, floodFinished=false, isUnderwater=false;
+    let frame=0, causticTextures=[], causticTime=0, currentCausticIndex=0;
+
+    // ---------- Parameters ---------- //
+    const rush={startZ:-800,startScale:0.2,maxScale:1,waveSpeed:0,maxWaveSpeed:30,camHeight:8,fogColor:0x90a6ae,underwaterFogColor:0x003355,underwaterFogDensity:0.012,distortionStart:12,distortionCalm:3,sizeStart:6,sizeCalm:1.5};
+    const afterFlood={baseDistortion:3,extraDistortion:3,baseSize:1.5,extraSize:1.5,freq:0.8};
+    const sliderCfg={maxRise:50,startYear:2030,endYear:2100,current:0,target:0};
+
+    // ---------- Init ---------- //
+    init();
+    function init(){
+      scene=new THREE.Scene();
+      scene.background=new THREE.Color(0x87ceeb);
+      scene.fog=new THREE.FogExp2(rush.fogColor,0.005);
+
+      camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,0.1,20000);
+      camera.position.set(0,rush.camHeight,50);
+
+      renderer=new THREE.WebGLRenderer({antialias:true});
+      renderer.setSize(window.innerWidth,window.innerHeight);
+      renderer.toneMapping=THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure=0.5;
+      document.body.appendChild(renderer.domElement);
+
+      controls=new OrbitControls(camera,renderer.domElement);
+      controls.maxPolarAngle=Math.PI*0.45;controls.target.set(0,rush.camHeight,0);controls.update();
+
+      scene.add(new THREE.AmbientLight(0xffffff,.7));
+      const dir=new THREE.DirectionalLight(0xffffff,1);dir.position.set(-40,80,-80);scene.add(dir);
+
+      sky=new Sky();sky.scale.setScalar(1000);scene.add(sky);
+      sun=new THREE.Vector3();const su=sky.material.uniforms;su.turbidity.value=10;su.rayleigh.value=2;su.mieCoefficient.value=0.005;su.mieDirectionalG.value=0.8;sun.setFromSphericalCoords(1,THREE.MathUtils.degToRad(80),THREE.MathUtils.degToRad(180));su.sunPosition.value.copy(sun);
+
+      createFloor();
+      createWater();
+
+      window.addEventListener('resize',onResize);
+      document.getElementById('startFlood').addEventListener('click',()=>{if(!floodStarted){floodStarted=true;document.getElementById('startFlood').disabled=true;document.getElementById('info').textContent='Flood approaching…';}});
+      document.getElementById('resetScene').addEventListener('click',()=>location.reload());//could also use history.go(0)
+      document.getElementById('water-level-slider').addEventListener('input',onSlider);
+
+      document.getElementById('loading').style.display='none';
+      animate();
+    }
+
+    // ---------- Creation ---------- //
+    function createFloor(){const geom=new THREE.PlaneGeometry(2000,2000);const mat=new THREE.MeshStandardMaterial({color:0x7a5b3c,roughness:.95});floorMesh=new THREE.Mesh(geom,mat);floorMesh.rotation.x=-Math.PI/2;floorMesh.position.y=-0.5;scene.add(floorMesh);}    
+    function createWater(){const normals=new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg',t=>{t.wrapS=t.wrapT=THREE.RepeatWrapping;});const geom=new THREE.PlaneGeometry(2000,2000,64,64);water=new Water(geom,{textureWidth:512,textureHeight:512,waterNormals:normals,sunDirection:new THREE.Vector3(0,1,0),sunColor:0xffffff,waterColor:0x0051a0,distortionScale:rush.distortionStart,size:rush.sizeStart,fog:true});water.rotation.x=-Math.PI/2;water.position.set(0,-0.5,rush.startZ);water.scale.setScalar(rush.startScale);water.material.transparent=true;water.material.opacity=0.9;scene.add(water);createFoam();}
+    function createFoam(){const count=60000;const geom=new THREE.BufferGeometry();const pos=new Float32Array(count*3);for(let i=0;i<count;i++){const i3=i*3;pos[i3]=(Math.random()-0.5)*2000;pos[i3+1]=-1000+Math.random()*100;pos[i3+2]=0;}geom.setAttribute('position',new THREE.BufferAttribute(pos,3));const mat=new THREE.PointsMaterial({color:0xffffff,size:2.2,sizeAttenuation:true,opacity:0,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false});foamParticles=new THREE.Points(geom,mat);water.add(foamParticles);}    
+
+    // ---------- Event Handlers ---------- //
+    function onResize(){camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);}    
+    function onSlider(e){const v=+e.target.value;sliderCfg.target=(v/100)*sliderCfg.maxRise;const yr=Math.floor(sliderCfg.startYear+(v/100)*(sliderCfg.endYear-sliderCfg.startYear));document.getElementById('year-display').textContent=`Year: ${yr}`;}    
+
+    // ---------- Animation Loop ---------- //
+    function animate(){requestAnimationFrame(animate);if(water)water.material.uniforms.time.value+=1/60;if(floodStarted&&!floodFinished)updateRushIn();if(floodFinished)updateSliderPhase();renderer.render(scene,camera);frame++;}
+
+    // ---------- Rush‑In Phase ---------- //
+    function updateRushIn(){rush.waveSpeed=Math.min(rush.waveSpeed+0.08,rush.maxWaveSpeed);water.position.z+=rush.waveSpeed*0.05;const scaleY=water.scale.y;const frontZ=water.position.z+1000*scaleY;if(frontZ<camera.position.z){const startFront=rush.startZ+1000*rush.startScale;const prog=(frontZ-startFront)/(camera.position.z-startFront);const newScale=rush.startScale+(rush.maxScale-rush.startScale)*THREE.MathUtils.clamp(prog,0,1);water.scale.set(newScale,newScale,1);water.material.uniforms.distortionScale.value=rush.distortionStart-(rush.distortionStart-rush.distortionCalm)*prog;water.material.uniforms.size.value=rush.sizeStart-(rush.sizeStart-rush.sizeCalm)*prog;}animateFoam(0.25);foamParticles.material.opacity=Math.min(1,rush.waveSpeed/6);if(frontZ>=camera.position.z)finishRush();}
+
+    function finishRush(){floodFinished=true;document.getElementById('control-panel').style.display='block';document.getElementById('info').textContent='Use slider to raise water level';sliderCfg.current=water.position.y;sliderCfg.target=sliderCfg.current;water.material.uniforms.distortionScale.value=afterFlood.baseDistortion;water.material.uniforms.size.value=afterFlood.baseSize;floorMesh.visible=false;foamParticles.visible=false;loadCaustics();}
+
+    // ---------- After‑Flood ---------- //
+    function updateSliderPhase(){sliderCfg.current+=(sliderCfg.target-sliderCfg.current)*0.02;water.position.y=sliderCfg.current-0.5;const t=performance.now()*0.001;const extra=Math.sin(t*afterFlood.freq)*0.5+0.5;water.material.uniforms.distortionScale.value=afterFlood.baseDistortion+afterFlood.extraDistortion*extra;water.material.uniforms.size.value=afterFlood.baseSize+afterFlood.extraSize*extra;updateUnderwater();updateCaustics();}
+
+    // ---------- Foam Helper ---------- //
+    function animateFoam(rate){if(!foamParticles.visible)return;const posAttr=foamParticles.geometry.attributes.position;const arr=posAttr.array;for(let i=0;i<arr.length;i+=3){if(Math.random()<rate){arr[i+2]=Math.random()*15;arr[i]+= (Math.random()-0.5)*8;arr[i+1]+= (Math.random()-0.5)*8;}}posAttr.needsUpdate=true;}
+
+    // ---------- Underwater ---------- //
+    function updateUnderwater(){const was=isUnderwater;isUnderwater=camera.position.y<water.position.y+2;if(was!==isUnderwater){if(isUnderwater){scene.fog=new THREE.FogExp2(rush.underwaterFogColor,rush.underwaterFogDensity);scene.background=new THREE.Color(rush.underwaterFogColor);renderer.setClearColor(rush.underwaterFogColor,1);sky.visible=false;}else{scene.fog=null;scene.background=null;renderer.setClearColor(0x000000,0);sky.visible=true;}}}
+
+    // ---------- Caustics ---------- //
+    function loadCaustics(){
+      if(causticTextures.length) return;
+      const urls=[
+        'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/qf7jbexawjm561gbrnur.bmp',
+        'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/uafyuzgxuqfdslrbnqpm.bmp',
+        'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/yslsrdo3jqqfn8xjfyii.bmp',
+        'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/djxasdkslrqcybelyrom.bmp',
+        'https://res.cloudinary.com/djz8b4fhb/image/upload/v1743730963/ywqy9urvrryjwk32evgv.bmp'
+      ];
+      const loader=new THREE.TextureLoader();
+      let loaded=0;
+      urls.forEach((u,i)=>{
+        causticTextures[i]=loader.load(u,()=>{if(++loaded===urls.length) createCausticPlane();});
+        causticTextures[i].wrapS=causticTextures[i].wrapT=THREE.RepeatWrapping;
+        causticTextures[i].repeat.set(-4,4);
+      });
+    }
+
+    function createCausticPlane(){
+      const geom=new THREE.PlaneGeometry(20000,20000);
+      const mat=new THREE.MeshBasicMaterial({map:causticTextures[0],transparent:true,blending:THREE.AdditiveBlending,opacity:0});
+      causticPlane=new THREE.Mesh(geom,mat);
+      causticPlane.rotation.x=-Math.PI/2;
+      causticPlane.position.y=-100;
+      scene.add(causticPlane);
+    }
+
+    function updateCaustics(){
+      if(!causticPlane||!isUnderwater) return;
+      causticPlane.visible=true;
+      causticPlane.rotation.x=Math.PI/8;
+      causticPlane.position.y=camera.position.y-20;
+      causticPlane.position.z=camera.position.z-100;
+      causticTime+=0.01;
+      const speed=0.2+(water.position.y*0.01);
+      causticPlane.material.map.offset.set(Math.cos(causticTime)*speed,Math.sin(causticTime)*speed);
+      const depth=water.position.y-camera.position.y;
+      causticPlane.material.opacity=Math.max(0.05,0.7-depth*0.01);
+      if(frame%5===0){
+        currentCausticIndex=(currentCausticIndex-1+causticTextures.length)%causticTextures.length;
+        causticPlane.material.map=causticTextures[currentCausticIndex];
+        causticPlane.material.needsUpdate=true;
+      }
+    }
+  </script>
+</body>
+</html>

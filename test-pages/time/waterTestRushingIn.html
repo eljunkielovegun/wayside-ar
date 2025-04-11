@@ -1,0 +1,577 @@
+
+<body>
+    <div id="loading">Loading assets... Please wait.</div>
+    <div id="info">Flood Water Effect - Three.js</div>
+    <div id="controls">
+      <button id="startFlood">Start Flood</button>
+      <button id="resetScene">Reset Scene</button>
+    </div>
+</body>
+
+<style>     
+
+body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      width: 100%;
+      text-align: center;
+      color: white;
+      font-size: 14px;
+      z-index: 100;
+      pointer-events: none;
+    }
+    #loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-size: 18px;
+      z-index: 999;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
+      text-align: center;
+      z-index: 100;
+    }
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+ 
+
+</style>
+
+<script>
+// Import Three.js and required modules
+import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js';
+import { Water } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/objects/Water.js';
+import { Sky } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/objects/Sky.js';
+
+// Global variables
+let container, camera, scene, renderer;
+let controls, water, sun, sky;
+let foamParticles;
+let floodStarted = false;
+let underwaterFog, normalFog;
+
+// Flood animation parameters
+const params = {
+  // Water appearance
+  waterColor: 0x0051a0,
+  distortionScale: 4.0,
+  size: 2.0,
+  
+  // Wave parameters
+  waveSpeed: 0.0, // Will be animated
+  maxWaveSpeed: 30.0,
+  
+  // Scene setup
+  cameraHeight: 8,
+  fogColor: 0x90a6ae,
+  underwaterFogColor: 0x003355,
+  underwaterFogDensity: 0.08,
+  
+  // Initial water position and scale
+  waterStartDistance: -800,
+  waterStartScale: 0.2,    // Start very small
+  waterMaxScale: 1.0       // Full size
+};
+
+// Initialize the scene
+init();
+animate();
+
+function init() {
+  try {
+    // Get container or create one if it doesn't exist
+    container = document.getElementById('container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'container';
+      document.body.appendChild(container);
+    }
+
+    // Create scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    
+    // Create fog for atmospheric effect
+    normalFog = new THREE.FogExp2(params.fogColor, 0.005);
+    underwaterFog = new THREE.FogExp2(params.underwaterFogColor, params.underwaterFogDensity);
+    scene.fog = normalFog;
+    
+    // Create camera
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, params.cameraHeight, 50);
+    camera.lookAt(0, params.cameraHeight, 0);
+    
+    // Create renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.5;
+    document.body.appendChild(renderer.domElement);
+    
+    // Add controls
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.maxPolarAngle = Math.PI * 0.45;
+    controls.minDistance = 10.0;
+    controls.maxDistance = 200.0;
+    controls.target.set(0, params.cameraHeight, 0);
+    controls.update();
+    
+    // Add lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(-40, 80, -80);
+    directionalLight.target.position.set(0, 0, 0);
+    scene.add(directionalLight);
+    scene.add(directionalLight.target);
+    
+    // Sun position vector
+    sun = new THREE.Vector3();
+    
+    // Add sky
+    createSky();
+    
+    // Add terrain and buildings first
+    createTerrain();
+    createBuildings();
+    
+    // Add water with foam particles attached
+    createWater();
+    
+    // Add event listeners
+    window.addEventListener('resize', onWindowResize);
+    
+    // Add UI buttons if they exist
+    const startButton = document.getElementById('startFlood');
+    if (startButton) {
+      startButton.addEventListener('click', startFlood);
+    }
+    
+    const resetButton = document.getElementById('resetScene');
+    if (resetButton) {
+      resetButton.addEventListener('click', resetScene);
+    }
+    
+  } catch (error) {
+    console.error("Error during initialization:", error);
+  } finally {
+    // Always remove loading screen if it exists
+    const loadingScreen = document.getElementById('loading');
+    if (loadingScreen) {
+      loadingScreen.style.display = 'none';
+    }
+  }
+}
+
+// Create sky
+function createSky() {
+  sky = new Sky();
+  sky.scale.setScalar(1000);
+  scene.add(sky);
+  
+  const skyUniforms = sky.material.uniforms;
+  skyUniforms['turbidity'].value = 10;
+  skyUniforms['rayleigh'].value = 2;
+  skyUniforms['mieCoefficient'].value = 0.005;
+  skyUniforms['mieDirectionalG'].value = 0.8;
+  
+  // Sun position parameters
+  const phi = THREE.MathUtils.degToRad(80);
+  const theta = THREE.MathUtils.degToRad(180);
+  
+  sun.setFromSphericalCoords(1, phi, theta);
+  skyUniforms['sunPosition'].value.copy(sun);
+}
+
+// Create water with foam particles
+function createWater() {
+  // Create a texture loader
+  const textureLoader = new THREE.TextureLoader();
+  
+  // Create water geometry with good resolution for waves
+  const waterGeometry = new THREE.PlaneGeometry(2000, 2000, 32, 32);
+  
+  // Load water normal texture
+  const waterNormals = textureLoader.load('https://threejs.org/examples/textures/waternormals.jpg', function(texture) {
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  });
+  
+  // Create water with custom parameters
+  water = new Water(
+    waterGeometry,
+    {
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals: waterNormals,
+      sunDirection: new THREE.Vector3(0, 1, 0).normalize(),
+      sunColor: 0xffffff,
+      waterColor: params.waterColor,
+      distortionScale: params.distortionScale,
+      fog: true
+    }
+  );
+  
+  // Position water
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = -0.4; // Slightly above terrain to avoid z-fighting
+  water.position.z = params.waterStartDistance; // Start from far away
+  water.position.x = 0; // Center on X axis
+  
+  // Set initial scale
+  water.scale.set(
+    params.waterStartScale, 
+    params.waterStartScale, 
+    1.0
+  );
+  
+  // Make water slightly transparent
+  water.material.transparent = true;
+  water.material.opacity = 0.9;
+  
+  scene.add(water);
+  
+  // Create foam particles as a child of water
+  createFoamParticles();
+}
+
+// Create foam particles attached to water
+function createFoamParticles() {
+  const particleCount = 50000; // Increased for better coverage
+  const particleGeometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(particleCount * 3);
+  const sizes = new Float32Array(particleCount);
+  
+  
+  // IMPORTANT: The water plane is rotated -90 degrees around X,
+  // so the "front edge" in its local space is actually the POSITIVE Y direction
+  
+   // Create particles concentrated at front edge of water
+for (let i = 0; i < particleCount; i++) {
+  const i3 = i * 3;
+  
+ const frontEdge = -1000; // Half length of water plane
+
+positions[i3] = (Math.random() - 0.5) * 2000; // X (width)
+positions[i3 + 1] = frontEdge + Math.random() * 20; // Y (depth) → near front edge
+positions[i3 + 2] = Math.random() * 20; // Z (height above water)
+  
+}
+  
+  particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  
+  // Create white, semi-transparent particle material
+  const particleMaterial = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 2.0,
+    sizeAttenuation: true,
+    opacity: 0.7, // Start 
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  
+  // Create point system and attach directly to water
+  foamParticles = new THREE.Points(particleGeometry, particleMaterial);
+  water.add(foamParticles); // Particles are child of water
+  
+  
+  //add marker
+  const marker = new THREE.Mesh(
+  new THREE.BoxGeometry(10, 10, 10),
+  new THREE.MeshBasicMaterial({ color: 0xff0000 })
+      );
+  marker.position.set(0, -1000, 5); // X=0, Y=front edge, Z=just above water
+  water.add(marker);
+}
+
+// Create terrain
+function createTerrain() {
+  const terrainGeometry = new THREE.PlaneGeometry(2000, 2000, 128, 128);
+  
+  // Create displacement for terrain
+  const positions = terrainGeometry.attributes.position;
+  const vertex = new THREE.Vector3();
+  
+  for (let i = 0; i < positions.count; i++) {
+    vertex.fromBufferAttribute(positions, i);
+    
+    // Skip the edges to keep them flat
+    const distanceFromCenter = Math.sqrt(vertex.x * vertex.x + vertex.z * vertex.z);
+    if (distanceFromCenter < 800) {
+      // Add some random noise for terrain variation
+      vertex.y = Math.random() * 3 - 0.5;
+      
+      // Add some hills in the background
+      if (vertex.z < -50) {
+        const distance = Math.abs(vertex.z + 50) * 0.1;
+        vertex.y += Math.sin(vertex.x * 0.05) * distance * 0.2;
+      }
+      
+      // Add more pronounced terrain features
+      vertex.y += Math.sin(vertex.x * 0.02) * Math.cos(vertex.z * 0.02) * 5.0;
+    }
+    
+    positions.setXYZ(i, vertex.x, vertex.y, vertex.z);
+  }
+  
+  terrainGeometry.computeVertexNormals();
+  
+  // Create material with grass texture
+  const groundMaterial = new THREE.MeshStandardMaterial({
+    color: 0x567d46,
+    roughness: 0.8,
+    metalness: 0.1
+  });
+  
+  const terrain = new THREE.Mesh(terrainGeometry, groundMaterial);
+  terrain.rotation.x = -Math.PI / 2;
+  terrain.position.y = -0.5;
+  scene.add(terrain);
+}
+
+// Create simple buildings
+function createBuildings() {
+  const buildings = new THREE.Group();
+  scene.add(buildings);
+  
+  // Building colors
+  const buildingColors = [
+    0x8c8c8c, 0xa5a5a5, 0x717171, 0x969696, 0x7c7c7c
+  ];
+  
+  // Create several buildings with random sizes
+  for (let i = 0; i < 15; i++) {
+    const width = Math.random() * 5 + 5;
+    const height = Math.random() * 15 + 5;
+    const depth = Math.random() * 5 + 5;
+    
+    const buildingGeometry = new THREE.BoxGeometry(width, height, depth);
+    const buildingMaterial = new THREE.MeshStandardMaterial({
+      color: buildingColors[Math.floor(Math.random() * buildingColors.length)],
+      roughness: 0.7,
+      metalness: 0.2
+    });
+    
+    const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+    
+    // Position buildings randomly, but more toward the sides to keep a path in the middle
+    const spread = 50;
+    const xPos = (Math.random() - 0.5) * spread;
+    let zPos = (Math.random() - 0.5) * 100 - 20; // Mostly in front of camera
+    
+    // Push to the sides if close to center
+    if (Math.abs(xPos) < 10) {
+      zPos -= 15; // Further away from camera if in the center
+    }
+    
+    building.position.set(xPos, height / 2 - 0.5, zPos);
+    buildings.add(building);
+  }
+}
+
+    // Start flood animation
+    function startFlood() {
+    if (floodStarted) return;
+    
+    floodStarted = true;
+    
+    // Reset water position and scale
+    water.position.z = params.waterStartDistance;
+    water.position.x = 0;
+    water.scale.set(params.waterStartScale, params.waterStartScale, 1.0);
+    
+    // Update info text if element exists
+    const infoElement = document.getElementById('info');
+    if (infoElement) {
+        infoElement.textContent = `Flood approaching...`;
+    }
+    
+    // Disable start button if it exists
+    const startButton = document.getElementById('startFlood');
+    if (startButton) {
+        startButton.disabled = true;
+    }
+    }
+
+    // Reset scene
+    function resetScene() {
+    floodStarted = false;
+    
+    // Reset water position and scale
+    water.position.z = params.waterStartDistance;
+    water.position.x = 0;
+    water.scale.set(params.waterStartScale, params.waterStartScale, 1.0);
+    
+    // Reset parameters
+    params.waveSpeed = 0.0;
+    
+    // Reset foam particles opacity
+    if (foamParticles) {
+        foamParticles.material.opacity = 0.0;
+    }
+    
+    // Reset fog
+    scene.fog = normalFog;
+    scene.background = new THREE.Color(0x87ceeb);
+    
+    // Reset camera
+    camera.position.set(0, params.cameraHeight, 50);
+    camera.lookAt(0, params.cameraHeight, 0);
+    controls.target.set(0, params.cameraHeight, 0);
+    controls.update();
+    
+    // Reset info text if element exists
+    const infoElement = document.getElementById('info');
+    if (infoElement) {
+        infoElement.textContent = 'Flood Water Effect - Three.js';
+    }
+    
+    // Enable start button if it exists
+    const startButton = document.getElementById('startFlood');
+    if (startButton) {
+        startButton.disabled = false;
+    }
+    }
+
+// Handle window resize
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// Generate wave shape using sine wave
+function generateWaveShape(x, z, time) {
+  // Create a dynamic wave shape
+  const waveHeight = 
+    Math.sin(time * 2 + x * 0.02) * 2.0 + 
+    Math.sin(time * 1.5 + x * 0.04 + z * 0.02) * 1.5;
+  
+  return waveHeight;
+}
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  
+  // Animate water
+  if (water && foamParticles) {
+    // Always animate water surface
+    water.material.uniforms['time'].value += 1.0 / 60.0;
+    
+    if (floodStarted) {
+      // Gradually increase wave speed
+      params.waveSpeed = Math.min(params.waveSpeed + 0.05, params.maxWaveSpeed);
+      
+      // Move water toward camera - foam moves automatically as it's a child of water
+      const waterVelocity = params.waveSpeed * 0.1;
+      water.position.z += waterVelocity;
+      
+      // Calculate progress for water scale (0 to 1)
+      const totalDistance = camera.position.z - params.waterStartDistance;
+      const coveredDistance = water.position.z - params.waterStartDistance;
+      const progress = Math.min(1.0, coveredDistance / totalDistance);
+      
+      // Scale water plane larger as it approaches
+      const currentScale = params.waterStartScale + (params.waterMaxScale - params.waterStartScale) * progress;
+      water.scale.set(currentScale, currentScale, 1.0);
+      
+      // Animate foam particles - updating heights & sizes for wave effect
+      const time = performance.now() * 0.001;
+      const positions = foamParticles.geometry.attributes.position;
+      const sizes = foamParticles.geometry.attributes.size;
+      
+      for (let i = 0; i < positions.count; i++) {
+        const i3 = i * 3;
+        
+        // Get local coordinates
+        const x = positions.array[i3];
+        const y = positions.array[i3 + 1];
+        
+        // Distance from front edge (remember y is depth in water's local space due to rotation)
+        const distanceFromFront = Math.max(0, 1000 - y);
+        
+        // Wave height at this position
+        const waveHeight = generateWaveShape(x, y, time);
+        
+        // Animate particle height
+        if (distanceFromFront < 30) {
+          // Front wave particles should be higher and more dynamic
+          const frontFactor = Math.pow(1 - distanceFromFront/30, 2);
+          positions.array[i3 + 2] = 3 + waveHeight * 5.0 * frontFactor + Math.random() * frontFactor * 3.0;
+        } else {
+          // Particles away from front have slight height variation
+          positions.array[i3 + 2] = 1 + waveHeight * 0.5 + Math.random() * 0.5;
+        }
+        
+        // Continuously shuffle some particles to maintain wave front density
+        if (Math.random() < 0.02) {
+          // Reset position to front edge, keep same X
+          positions.array[i3 + 1] = -1000 + Math.random() * 20;
+          positions.array[i3 + 2] = 3 + Math.random() * 5;
+        }
+      }
+      
+      positions.needsUpdate = true;
+      sizes.needsUpdate = true;
+      
+      // Adjust particle opacity based on wave speed for fade-in effect
+      foamParticles.material.opacity = Math.min(0.8, params.waveSpeed / 15.0);
+      
+      // Check if water has reached the camera
+      if (water.position.z >= camera.position.z - 20) {
+        // Transition to underwater effect
+        scene.fog = underwaterFog;
+        scene.background = new THREE.Color(params.underwaterFogColor);
+        
+        // Update info text if element exists
+        const infoElement = document.getElementById('info');
+        if (infoElement) {
+          infoElement.textContent = 'Underwater! The flood has overtaken the area.';
+        }
+      } else {
+        // Update info text with distance information if element exists
+        const infoElement = document.getElementById('info');
+        if (infoElement) {
+          const distance = Math.max(0, Math.floor(camera.position.z - water.position.z));
+          infoElement.textContent = `Flood approaching! Distance: ${distance} meters`;
+        }
+      }
+    }
+  }
+  
+  // Render the scene
+  renderer.render(scene, camera);
+
+
+  
+}</script>
