@@ -112,8 +112,10 @@
             // Handle window resize
             window.addEventListener('resize', onWindowResize);
             
-            // Start animation loop
+            // Update info text to show the scene is ready
             document.getElementById('info').textContent = 'AR Ready - Virtual ground plane shown';
+            
+            // Start animation loop
             animate();
         }
         
