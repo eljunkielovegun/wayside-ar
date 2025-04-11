@@ -52,127 +52,32 @@
             border-radius: 5px;
             z-index: 1000;
         }
+        .place-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 1000;
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div id="permissions-message">Please grant camera and motion permissions</div>
     <button id="start-button">Start AR Experience</button>
     <div id="debug-info"></div>
+    <button id="place-button" class="place-button">Place Object</button>
     
     <script>
-    // Register custom A-Frame component for ground plane detection
-    AFRAME.registerComponent('ground-detector', {
-        init: function() {
-            this.camera = document.querySelector('a-camera');
-            this.scene = document.querySelector('a-scene');
-            this.groundPlane = document.querySelector('#ground-plane');
-            this.debug = document.querySelector('#debug-info');
-            
-            this.raycaster = new THREE.Raycaster();
-            this.groundNormal = new THREE.Vector3(0, 1, 0);
-            this.groundDetected = false;
-            
-            // Detect ground using device orientation
-            window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
-            
-            // Add debug tap to add objects
-            document.addEventListener('click', this.handleTap.bind(this));
-        },
-        
-        handleOrientation: function(event) {
-            // Get device orientation data
-            const alpha = event.alpha || 0; // Z-axis rotation [0, 360)
-            const beta = event.beta || 0;   // X-axis rotation [-180, 180)
-            const gamma = event.gamma || 0; // Y-axis rotation [-90, 90)
-            
-            // Update debug display
-            this.debug.textContent = `Alpha: ${alpha.toFixed(1)}° | Beta: ${beta.toFixed(1)}° | Gamma: ${gamma.toFixed(1)}°`;
-            
-            // Detect if device is roughly parallel to the ground (looking down)
-            // Beta is close to 90° when device is looking at the ground
-            if (beta > 60 && beta < 120) {
-                if (!this.groundDetected) {
-                    this.groundDetected = true;
-                    this.createGroundPlane(beta);
-                    this.debug.textContent += " | Ground detected!";
-                }
-            } else {
-                // Not looking at ground, update plane position
-                if (this.groundDetected) {
-                    this.updateGroundPlane(beta, gamma);
-                }
-            }
-        },
-        
-        createGroundPlane: function(beta) {
-            // Create a ground plane entity if it doesn't exist
-            if (!this.groundPlane) {
-                // Create ground plane at appropriate distance
-                // When beta is 90, we're looking directly at the ground
-                const distance = 3.0; // meters
-                
-                // Calculate position based on camera orientation
-                const cameraPosition = this.camera.object3D.position;
-                const cameraRotation = this.camera.object3D.rotation;
-                
-                // Create ground plane entity
-                const groundEntity = document.createElement('a-plane');
-                groundEntity.setAttribute('id', 'ground-plane');
-                groundEntity.setAttribute('width', '5');
-                groundEntity.setAttribute('height', '5');
-                groundEntity.setAttribute('color', '#7BC8A4');
-                groundEntity.setAttribute('opacity', '0.5');
-                groundEntity.setAttribute('rotation', '-90 0 0'); // Flat on ground
-                
-                // Position the ground plane below the camera
-                groundEntity.setAttribute('position', {
-                    x: cameraPosition.x,
-                    y: cameraPosition.y - distance,
-                    z: cameraPosition.z
-                });
-                
-                this.scene.appendChild(groundEntity);
-                this.groundPlane = groundEntity;
-            }
-        },
-        
-        updateGroundPlane: function(beta, gamma) {
-            if (this.groundPlane) {
-                // Update ground plane position based on device orientation
-                const cameraPosition = this.camera.object3D.position;
-                const distanceFactor = Math.cos((90 - beta) * Math.PI / 180);
-                const distance = 2 + distanceFactor;
-                
-                // Adjust position based on where user is looking
-                this.groundPlane.setAttribute('position', {
-                    x: cameraPosition.x,
-                    y: cameraPosition.y - distance,
-                    z: cameraPosition.z
-                });
-            }
-        },
-        
-        handleTap: function(event) {
-            if (this.groundDetected) {
-                // Create a small object at tap position
-                const boxEntity = document.createElement('a-box');
-                boxEntity.setAttribute('color', 'red');
-                boxEntity.setAttribute('width', '0.5');
-                boxEntity.setAttribute('height', '0.5');
-                boxEntity.setAttribute('depth', '0.5');
-                
-                // Position the box on the ground plane
-                const groundPosition = this.groundPlane.getAttribute('position');
-                boxEntity.setAttribute('position', {
-                    x: groundPosition.x + (Math.random() * 2 - 1),  // Random offset on ground plane
-                    y: groundPosition.y + 0.25,  // Half the height of the box
-                    z: groundPosition.z + (Math.random() * 2 - 1)   // Random offset on ground plane
-                });
-                
-                this.scene.appendChild(boxEntity);
-            }
-        }
-    });
+    let groundPlane = null;
+    let camera = null;
+    let isGroundDetected = false;
     
     // Handle start button click and permissions
     document.getElementById('start-button').addEventListener('click', function() {
@@ -203,18 +108,26 @@
         }
     });
     
+    // Place button event listener
+    document.getElementById('place-button').addEventListener('click', function() {
+        if (isGroundDetected && groundPlane) {
+            placeObject();
+        }
+    });
+    
     function startAR() {
         // Create A-Frame scene dynamically
         const arScene = document.createElement('a-scene');
         arScene.setAttribute('embedded', '');
-        arScene.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false;');
+        arScene.setAttribute('arjs', 'sourceType: webcam; debugUIEnabled: false; detectionMode: mono;');
+        arScene.setAttribute('renderer', 'logarithmicDepthBuffer: true;');
         arScene.setAttribute('vr-mode-ui', 'enabled: false');
         
         // Create camera
-        const camera = document.createElement('a-camera');
-        camera.setAttribute('position', '0 0 0');
+        camera = document.createElement('a-entity');
+        camera.setAttribute('camera', '');
         camera.setAttribute('look-controls', 'enabled: false');
-        camera.setAttribute('ground-detector', '');
+        camera.setAttribute('position', '0 1.6 0');
         arScene.appendChild(camera);
         
         // Add scene to body
@@ -222,6 +135,121 @@
         
         // Update message
         document.getElementById('permissions-message').textContent = 'Looking for ground plane...';
+        
+        // Start tracking device orientation for ground detection
+        window.addEventListener('deviceorientation', handleOrientation);
+        
+        // Add tap event listener for the whole document
+        document.addEventListener('click', handleDocumentTap);
+    }
+    
+    function handleOrientation(event) {
+        // Get device orientation data
+        const alpha = event.alpha || 0; // Z-axis rotation [0, 360)
+        const beta = event.beta || 0;   // X-axis rotation [-180, 180)
+        const gamma = event.gamma || 0; // Y-axis rotation [-90, 90)
+        
+        // Update debug display
+        const debugElement = document.getElementById('debug-info');
+        debugElement.textContent = `Alpha: ${alpha.toFixed(1)}° | Beta: ${beta.toFixed(1)}° | Gamma: ${gamma.toFixed(1)}°`;
+        
+        // Detect if device is pointing downward
+        // Beta is the front-to-back tilt - around 90° when flat/horizontal
+        if (beta > 70 && beta < 110) {
+            if (!isGroundDetected) {
+                createGroundPlane();
+                isGroundDetected = true;
+                debugElement.textContent += " | GROUND DETECTED!";
+                
+                // Show the place button
+                document.getElementById('place-button').style.display = 'block';
+            }
+        }
+        
+        // Update ground plane position
+        if (isGroundDetected && groundPlane) {
+            updateGroundPlane(beta, gamma);
+        }
+    }
+    
+    function createGroundPlane() {
+        // Create a ground plane entity if it doesn't exist
+        if (!groundPlane) {
+            const scene = document.querySelector('a-scene');
+            
+            // Create ground plane entity
+            groundPlane = document.createElement('a-plane');
+            groundPlane.setAttribute('width', '5');
+            groundPlane.setAttribute('height', '5');
+            groundPlane.setAttribute('color', '#7BC8A4');
+            groundPlane.setAttribute('opacity', '0.5');
+            groundPlane.setAttribute('rotation', '-90 0 0'); // Flat on ground
+            groundPlane.setAttribute('position', '0 -1.5 -3'); // Below camera, in front
+            
+            scene.appendChild(groundPlane);
+            
+            // Update message
+            document.getElementById('permissions-message').textContent = 'Ground plane detected! Tap to place objects.';
+        }
+    }
+    
+    function updateGroundPlane(beta, gamma) {
+        // Update ground plane position based on device orientation
+        // Beta values closer to 90 mean the device is more parallel to the ground
+        const betaFactor = Math.min(Math.abs(beta - 90) / 20, 1); // 0 when beta = 90, 1 when beta differs by 20 or more
+        const distance = 2 + betaFactor; // Distance from camera
+        
+        // Set ground plane position
+        // Fixed distance in front of the camera, adjusted by orientation
+        groundPlane.setAttribute('position', {
+            x: 0, 
+            y: -1.5, 
+            z: -distance
+        });
+    }
+    
+    function handleDocumentTap(event) {
+        // Only handle taps outside UI elements
+        if (event.target.tagName === 'BUTTON') {
+            return;
+        }
+        
+        if (isGroundDetected) {
+            placeObject();
+        }
+    }
+    
+    function placeObject() {
+        if (!groundPlane) return;
+        
+        const scene = document.querySelector('a-scene');
+        
+        // Create a box entity
+        const box = document.createElement('a-box');
+        box.setAttribute('color', '#FF5555');
+        box.setAttribute('width', '0.5');
+        box.setAttribute('height', '0.5');
+        box.setAttribute('depth', '0.5');
+        
+        // Get ground plane position
+        const groundPosition = groundPlane.getAttribute('position');
+        
+        // Add random offset on the ground plane
+        const offsetX = (Math.random() - 0.5) * 3;
+        const offsetZ = (Math.random() - 0.5) * 3;
+        
+        // Set the box position
+        box.setAttribute('position', {
+            x: groundPosition.x + offsetX,
+            y: groundPosition.y + 0.25, // Half of the box height
+            z: groundPosition.z + offsetZ
+        });
+        
+        // Add box to the scene
+        scene.appendChild(box);
+        
+        // Update message
+        document.getElementById('permissions-message').textContent = 'Object placed! Tap again to place more.';
     }
     </script>
 </body>
